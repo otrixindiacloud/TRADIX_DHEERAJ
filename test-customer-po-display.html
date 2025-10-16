@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Customer PO Display</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .customer-po { font-family: monospace; font-size: 0.875rem; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Customer PO Column Display Test</h1>
+    
+    <div class="test-section">
+        <h2>Raw Data Test</h2>
+        <div id="rawData"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Customer PO Column Test</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Order Number</th>
+                    <th>Customer PO (Raw)</th>
+                    <th>Customer PO (Processed)</th>
+                    <th>Should Show</th>
+                </tr>
+            </thead>
+            <tbody id="testTable">
+                <tr>
+                    <td>Loading...</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // Test the API and display the data
+        fetch('http://localhost:5000/api/sales-orders?limit=10')
+            .then(response => response.json())
+            .then(data => {
+                console.log('Raw data:', data);
+                
+                // Display raw data
+                const rawDataDiv = document.getElementById('rawData');
+                rawDataDiv.innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                
+                // Test Customer PO rendering
+                const tbody = document.getElementById('testTable');
+                tbody.innerHTML = '';
+                
+                data.forEach(order => {
+                    const row = document.createElement('tr');
+                    
+                    // Order Number
+                    const orderCell = document.createElement('td');
+                    orderCell.textContent = order.orderNumber;
+                    row.appendChild(orderCell);
+                    
+                    // Raw Customer PO
+                    const rawPoCell = document.createElement('td');
+                    rawPoCell.textContent = `'${order.customerPoNumber}' (${typeof order.customerPoNumber})`;
+                    rawPoCell.style.color = order.customerPoNumber ? 'green' : 'red';
+                    row.appendChild(rawPoCell);
+                    
+                    // Processed Customer PO (simulating the frontend logic)
+                    const processedPoCell = document.createElement('td');
+                    const processedValue = order.customerPoNumber || "-";
+                    processedPoCell.innerHTML = `<span class="customer-po">${processedValue}</span>`;
+                    processedPoCell.style.color = processedValue === "-" ? 'gray' : 'black';
+                    row.appendChild(processedPoCell);
+                    
+                    // Expected result
+                    const expectedCell = document.createElement('td');
+                    const expectedValue = order.customerPoNumber ? order.customerPoNumber : "-";
+                    expectedCell.textContent = expectedValue;
+                    expectedCell.style.color = expectedValue === "-" ? 'gray' : 'black';
+                    row.appendChild(expectedCell);
+                    
+                    tbody.appendChild(row);
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching sales orders:', error);
+                document.getElementById('testTable').innerHTML = 
+                    '<tr><td colspan="4">Error loading data: ' + error.message + '</td></tr>';
+            });
+    </script>
+</body>
+</html>

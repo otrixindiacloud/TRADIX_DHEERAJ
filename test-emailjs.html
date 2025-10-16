@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EmailJS Test</title>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+</head>
+<body>
+    <h1>EmailJS Test</h1>
+    <button onclick="testEmailJS()">Test EmailJS</button>
+    <div id="result"></div>
+
+    <script>
+        // Initialize EmailJS
+        emailjs.init('Py17HAlLnrbB4HGhw');
+
+        async function testEmailJS() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing EmailJS...';
+
+            try {
+                console.log('Testing EmailJS...');
+                
+                const templateParams = {
+                    to_email: 'test@example.com',
+                    to_name: 'Test User',
+                    from_name: 'Golden Tag WLL',
+                    subject: 'Test Email',
+                    message: 'This is a test email from EmailJS',
+                    reply_to: 'dheerajprajapat561@gmail.com'
+                };
+
+                console.log('Sending email with params:', templateParams);
+
+                const response = await emailjs.send(
+                    'service_b7vwpdh',
+                    'template_3i2972k',
+                    templateParams
+                );
+
+                console.log('EmailJS response:', response);
+                resultDiv.innerHTML = `
+                    <h3>✅ Success!</h3>
+                    <p>Email sent successfully!</p>
+                    <p>Response: ${JSON.stringify(response, null, 2)}</p>
+                `;
+            } catch (error) {
+                console.error('EmailJS error:', error);
+                resultDiv.innerHTML = `
+                    <h3>❌ Error!</h3>
+                    <p>Failed to send email: ${error.message}</p>
+                    <p>Error details: ${JSON.stringify(error, null, 2)}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

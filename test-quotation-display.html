@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Quotation Display</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .quotation { color: #2563eb; font-weight: 500; font-family: monospace; }
+        .revision { color: #6b7280; font-size: 0.75rem; }
+    </style>
+</head>
+<body>
+    <h1>Sales Orders with Quotation Numbers</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Order Number</th>
+                <th>Customer</th>
+                <th>Customer PO</th>
+                <th>Quotation</th>
+                <th>Source</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="salesOrdersTable">
+            <tr>
+                <td>Loading...</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <script>
+        // Test the API and display the data
+        fetch('http://localhost:5000/api/sales-orders?limit=5')
+            .then(response => response.json())
+            .then(data => {
+                const tbody = document.getElementById('salesOrdersTable');
+                tbody.innerHTML = '';
+                
+                data.forEach(order => {
+                    const row = document.createElement('tr');
+                    
+                    // Order Number
+                    const orderCell = document.createElement('td');
+                    orderCell.textContent = order.orderNumber;
+                    row.appendChild(orderCell);
+                    
+                    // Customer
+                    const customerCell = document.createElement('td');
+                    customerCell.textContent = order.customer ? order.customer.name : 'No Customer';
+                    row.appendChild(customerCell);
+                    
+                    // Customer PO
+                    const poCell = document.createElement('td');
+                    poCell.textContent = order.customerPoNumber || '-';
+                    row.appendChild(poCell);
+                    
+                    // Quotation
+                    const quotationCell = document.createElement('td');
+                    if (order.quotation && order.quotation.quoteNumber) {
+                        const quotationDiv = document.createElement('div');
+                        const quoteNumber = document.createElement('div');
+                        quoteNumber.textContent = order.quotation.quoteNumber;
+                        quoteNumber.className = 'quotation';
+                        quotationDiv.appendChild(quoteNumber);
+                        
+                        if (order.quotation.revision > 1) {
+                            const revision = document.createElement('div');
+                            revision.textContent = `v${order.quotation.revision}`;
+                            revision.className = 'revision';
+                            quotationDiv.appendChild(revision);
+                        }
+                        
+                        quotationCell.appendChild(quotationDiv);
+                    } else {
+                        quotationCell.textContent = '-';
+                    }
+                    row.appendChild(quotationCell);
+                    
+                    // Source
+                    const sourceCell = document.createElement('td');
+                    sourceCell.textContent = order.sourceType || 'Manual';
+                    row.appendChild(sourceCell);
+                    
+                    // Status
+                    const statusCell = document.createElement('td');
+                    statusCell.textContent = order.status || 'Draft';
+                    row.appendChild(statusCell);
+                    
+                    tbody.appendChild(row);
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching sales orders:', error);
+                document.getElementById('salesOrdersTable').innerHTML = 
+                    '<tr><td colspan="6">Error loading data: ' + error.message + '</td></tr>';
+            });
+    </script>
+</body>
+</html>

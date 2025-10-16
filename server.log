@@ -1,0 +1,20 @@
+[dotenv@17.2.2] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+DATABASE_URL from env: NOT SET
+NODE_ENV: undefined
+file:///workspaces/Tradix_Final_Application/dist/index.js:2223
+      throw new Error(
+            ^
+
+Error: DATABASE_URL must be set. Did you forget to provision a database?
+    at server/db.ts (file:///workspaces/Tradix_Final_Application/dist/index.js:2223:13)
+    at __init (file:///workspaces/Tradix_Final_Application/dist/index.js:6:56)
+    at server/storage/user-storage.ts (file:///workspaces/Tradix_Final_Application/dist/index.js:2277:5)
+    at __init (file:///workspaces/Tradix_Final_Application/dist/index.js:6:56)
+    at server/storage/modular-storage-clean.ts (file:///workspaces/Tradix_Final_Application/dist/index.js:8633:5)
+    at __init (file:///workspaces/Tradix_Final_Application/dist/index.js:6:56)
+    at server/storage.ts (file:///workspaces/Tradix_Final_Application/dist/index.js:9756:5)
+    at __init (file:///workspaces/Tradix_Final_Application/dist/index.js:6:56)
+    at file:///workspaces/Tradix_Final_Application/dist/index.js:10452:1
+    at ModuleJob.run (node:internal/modules/esm/module_job:329:25)
+
+Node.js v22.17.0
