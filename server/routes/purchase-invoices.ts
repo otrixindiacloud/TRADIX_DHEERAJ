@@ -197,7 +197,8 @@ export function registerPurchaseInvoiceRoutes(app: Express) {
       const sampleInvoiceData = {
         invoiceNumber: `PI-TEST-${Date.now()}`,
         supplierInvoiceNumber: `SUP-TEST-${Date.now()}`,
-        supplierId: "test-supplier-id", // You'll need to create a test supplier first
+        supplierId: "00000000-0000-0000-0000-000000000001", // Test supplier ID
+        goodsReceiptId: "00000000-0000-0000-0000-000000000002", // Test goods receipt ID
         status: "Draft",
         paymentStatus: "Unpaid",
         invoiceDate: new Date().toISOString().split('T')[0],

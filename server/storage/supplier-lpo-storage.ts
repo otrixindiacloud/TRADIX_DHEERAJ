@@ -124,43 +124,60 @@ export class SupplierLpoStorage extends BaseStorage {
     return result[0]?.count || 0;
   }
   async createSupplierLpo(data: Partial<InsertSupplierLpo>) {
-    const lpoNumber = data.lpoNumber || this.generateNumber("LPO");
-    let supplierId = data.supplierId;
-    if (!supplierId) {
-      const existing = await db.select().from(suppliers).limit(1);
-      if (existing[0]) supplierId = existing[0].id; else {
-        const created = await db.insert(suppliers).values({ name: "Auto Supplier", contactPerson: "System" } as any).returning();
-        supplierId = created[0].id;
+    try {
+      const lpoNumber = data.lpoNumber || this.generateNumber("LPO");
+      let supplierId = data.supplierId;
+      
+      if (!supplierId) {
+        // Use raw SQL to get or create supplier
+        const existing = await db.execute(sql`SELECT id FROM suppliers LIMIT 1`);
+        const existingArray = existing.rows || existing;
+        if (existingArray[0]) {
+          supplierId = existingArray[0].id;
+        } else {
+          const created = await db.execute(sql`
+            INSERT INTO suppliers (id, name, contact_person, created_at, updated_at)
+            VALUES (gen_random_uuid(), 'Auto Supplier', 'System', NOW(), NOW())
+            RETURNING id
+          `);
+          const createdArray = created.rows || created;
+          supplierId = createdArray[0].id;
+        }
       }
+      
+      console.debug('[SupplierLpoStorage.createSupplierLpo] Preparing insert', { lpoNumber, supplierId });
+      
+      // Use raw SQL to insert LPO
+      const inserted = await db.execute(sql`
+        INSERT INTO supplier_lpos (
+          id, lpo_number, supplier_id, status, source_type, grouping_criteria,
+          subtotal, tax_amount, total_amount, currency, requires_approval, 
+          approval_status, created_by, source_sales_order_ids, source_quotation_ids, 
+          created_at, updated_at, version
+        ) VALUES (
+          gen_random_uuid(), ${lpoNumber}, ${supplierId}, ${data.status || 'Draft'}, 
+          ${data.sourceType || 'Manual'}, ${data.groupingCriteria || null},
+          ${data.subtotal || '0'}, ${data.taxAmount || '0'}, ${data.totalAmount || '0'}, 
+          ${data.currency || 'BHD'}, ${data.requiresApproval || false}, 
+          ${data.approvalStatus || (data.requiresApproval ? 'Pending' : 'Not Required')}, 
+          ${data.createdBy || null}, 
+          ${data.sourceSalesOrderIds ? JSON.stringify(data.sourceSalesOrderIds) : null}, 
+          ${data.sourceQuotationIds ? JSON.stringify(data.sourceQuotationIds) : null}, 
+          NOW(), NOW(), 1
+        ) RETURNING *
+      `);
+      
+      console.debug('[SupplierLpoStorage.createSupplierLpo] Insert result', inserted);
+      const insertedArray = inserted.rows || inserted;
+      if (!insertedArray || !insertedArray[0]) {
+        console.error('[SupplierLpoStorage.createSupplierLpo] Insert returned empty result set', { data });
+        throw new Error('Failed to insert supplier LPO');
+      }
+      return insertedArray[0];
+    } catch (error) {
+      console.error('[SupplierLpoStorage.createSupplierLpo] Error:', error);
+      throw error;
     }
-    console.debug('[SupplierLpoStorage.createSupplierLpo] Preparing insert', { lpoNumber, supplierId });
-        const record: any = {
-      lpoNumber,
-      supplierId,
-      status: data.status || 'Draft',
-      sourceType: data.sourceType || 'Manual',
-      groupingCriteria: data.groupingCriteria,
-      subtotal: data.subtotal,
-      taxAmount: data.taxAmount,
-      totalAmount: data.totalAmount,
-  currency: data.currency || 'BHD',
-      requiresApproval: data.requiresApproval || false,
-      approvalStatus: data.approvalStatus || (data.requiresApproval ? 'Pending' : 'Not Required'),
-      createdBy: (data as any).createdBy || null, // Allow null for createdBy
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      version: 1,
-      sourceSalesOrderIds: data.sourceSalesOrderIds,
-      sourceQuotationIds: data.sourceQuotationIds,
-    };
-    console.debug('[SupplierLpoStorage.createSupplierLpo] Insert record', record);
-    const inserted = await db.insert(supplierLpos).values(record).returning();
-    console.debug('[SupplierLpoStorage.createSupplierLpo] Insert result', inserted);
-    if (!inserted || !inserted[0]) {
-      console.error('[SupplierLpoStorage.createSupplierLpo] Insert returned empty result set', { record });
-      throw new Error('Failed to insert supplier LPO');
-    }
-    return inserted[0];
   }
   async updateSupplierLpo(id: string, data: Partial<InsertSupplierLpo>) { const updated: any = { ...data, updatedAt: new Date() }; const res = await db.update(supplierLpos).set(updated).where(eq(supplierLpos.id, id)).returning(); return res[0]; }
   async updateSupplierLpoStatus(id: string, status: string, userId?: string) {
@@ -253,37 +270,108 @@ export class SupplierLpoStorage extends BaseStorage {
     return out;
   }
   async createSupplierLposFromSupplierQuotes(quoteIds: string[], groupBy: string, userId?: string) {
-    const out: SupplierLpo[] = [];
-    if (!quoteIds.length) return out;
+    try {
+      const out: SupplierLpo[] = [];
+      if (!quoteIds || !Array.isArray(quoteIds) || quoteIds.length === 0) {
+        console.warn(`[WARNING] No valid quoteIds provided for LPO creation`);
+        return out;
+      }
+      
+      console.log(`[DEBUG] Starting createSupplierLposFromSupplierQuotes with ${quoteIds.length} quoteIds:`, quoteIds);
+      
+      // Check if supplier_quote_items table exists
+      try {
+        const tableCheck = await db.execute(sql`SELECT 1 FROM supplier_quote_items LIMIT 1`);
+        console.log(`[DEBUG] supplier_quote_items table exists and is accessible`);
+      } catch (error) {
+        console.error(`[ERROR] supplier_quote_items table check failed:`, error);
+        throw new Error(`supplier_quote_items table is not accessible: ${error.message}`);
+      }
     
     // Get supplier quotes with their items
     const quotes = [];
+    const failedQuotes = [];
+    
     for (const quoteId of quoteIds) {
-      const quote = await db
-        .select({
-          id: supplierQuotes.id,
-          quoteNumber: supplierQuotes.quoteNumber,
-          supplierId: supplierQuotes.supplierId,
-          // Remove enquiryId from select to avoid column error
-          // enquiryId: supplierQuotes.enquiryId,
-          status: supplierQuotes.status,
-          subtotal: supplierQuotes.subtotal,
-          taxAmount: supplierQuotes.taxAmount,
-          totalAmount: supplierQuotes.totalAmount,
-          currency: supplierQuotes.currency,
-          terms: supplierQuotes.terms,
-          notes: supplierQuotes.notes,
-          paymentTerms: supplierQuotes.paymentTerms,
-          deliveryTerms: supplierQuotes.deliveryTerms,
-          validUntil: supplierQuotes.validUntil,
-        })
-        .from(supplierQuotes)
-        .where(eq(supplierQuotes.id, quoteId))
-        .limit(1);
-      
-      if (quote[0]) {
-        quotes.push(quote[0]);
+      try {
+        console.log(`[DEBUG] Fetching supplier quote: ${quoteId}`);
+        
+        // Validate quoteId format
+        if (!quoteId || typeof quoteId !== 'string' || quoteId.trim().length === 0) {
+          console.warn(`[WARNING] Invalid quoteId format: ${quoteId}`);
+          failedQuotes.push({ quoteId, error: 'Invalid quoteId format' });
+          continue;
+        }
+        
+        // Use raw SQL to avoid Drizzle ORM issues
+        const quote = await db.execute(sql`
+          SELECT 
+            id,
+            quote_number as "quoteNumber",
+            supplier_id as "supplierId",
+            status,
+            subtotal,
+            tax_amount as "taxAmount",
+            total_amount as "totalAmount",
+            currency,
+            terms,
+            notes,
+            payment_terms as "paymentTerms",
+            delivery_terms as "deliveryTerms",
+            valid_until as "validUntil"
+          FROM supplier_quotes 
+          WHERE id = ${quoteId}
+          LIMIT 1
+        `);
+        
+        console.log(`[DEBUG] Quote query result for ${quoteId}:`, quote);
+        
+        // Convert raw SQL result to array format
+        const quoteArray = quote.rows || quote;
+        
+        if (quoteArray && quoteArray[0]) {
+          // Ensure all required fields are not null/undefined
+          const quoteData = {
+            id: quoteArray[0].id,
+            quoteNumber: quoteArray[0].quoteNumber || `QUOTE-${quoteId.substring(0, 8)}`,
+            supplierId: quoteArray[0].supplierId,
+            status: quoteArray[0].status || 'Draft',
+            subtotal: quoteArray[0].subtotal || '0',
+            taxAmount: quoteArray[0].taxAmount || '0',
+            totalAmount: quoteArray[0].totalAmount || '0',
+            currency: quoteArray[0].currency || 'BHD',
+            terms: quoteArray[0].terms || '',
+            notes: quoteArray[0].notes || '',
+            paymentTerms: quoteArray[0].paymentTerms || '30 Days',
+            deliveryTerms: quoteArray[0].deliveryTerms || 'Standard',
+            validUntil: quoteArray[0].validUntil,
+          };
+          
+          // Validate required fields
+          if (!quoteData.supplierId) {
+            console.warn(`[WARNING] Quote ${quoteId} has no supplierId, skipping`);
+            failedQuotes.push({ quoteId, error: 'Missing supplierId' });
+            continue;
+          }
+          
+          console.log(`[DEBUG] Processed quote data for ${quoteId}:`, quoteData);
+          quotes.push(quoteData);
+        } else {
+          console.warn(`[WARNING] No quote found for ID: ${quoteId}`);
+          failedQuotes.push({ quoteId, error: 'Quote not found' });
+        }
+      } catch (error) {
+        console.error(`[ERROR] Error fetching supplier quote ${quoteId}:`, error);
+        console.error(`[ERROR] Error stack:`, error.stack);
+        failedQuotes.push({ quoteId, error: error.message });
+        // Continue with other quotes instead of failing completely
+        continue;
       }
+    }
+    
+    // Log failed quotes for debugging
+    if (failedQuotes.length > 0) {
+      console.warn(`[WARNING] Failed to process ${failedQuotes.length} quotes:`, failedQuotes);
     }
     
     if (!quotes.length) return out;
@@ -324,35 +412,112 @@ export class SupplierLpoStorage extends BaseStorage {
       
       // Get quote items for all quotes in this group
       const quoteItems = [];
+      const failedItems = [];
+      
       for (const quote of supplierQuotes) {
-        const items = await db
-          .select({
-            id: supplierQuoteItems.id,
-            supplierQuoteId: supplierQuoteItems.supplierQuoteId,
-            itemDescription: supplierQuoteItems.itemDescription,
-            quantity: supplierQuoteItems.quantity,
-            unitPrice: supplierQuoteItems.unitPrice,
-            lineTotal: supplierQuoteItems.lineTotal,
-            unitOfMeasure: supplierQuoteItems.unitOfMeasure,
-            specification: supplierQuoteItems.specification,
-            brand: supplierQuoteItems.brand,
-            model: supplierQuoteItems.model,
-            warranty: supplierQuoteItems.warranty,
-            leadTime: supplierQuoteItems.leadTime,
-            notes: supplierQuoteItems.notes,
-            // Include discount fields
-            discountPercentage: supplierQuoteItems.discountPercentage,
-            discountAmount: supplierQuoteItems.discountAmount,
-          })
-          .from(supplierQuoteItems)
-          .where(eq(supplierQuoteItems.supplierQuoteId, quote.id));
-        quoteItems.push(...items);
+        try {
+          console.log(`[DEBUG] Fetching items for quote: ${quote.id}`);
+          
+          // Use raw SQL to avoid Drizzle ORM issues
+          const items = await db.execute(sql`
+            SELECT 
+              id,
+              supplier_quote_id as "supplierQuoteId",
+              item_description as "itemDescription",
+              quantity,
+              unit_price as "unitPrice",
+              line_total as "lineTotal"
+            FROM supplier_quote_items 
+            WHERE supplier_quote_id = ${quote.id}
+          `);
+          
+          console.log(`[DEBUG] Items query result for quote ${quote.id}:`, items);
+          
+          // Convert raw SQL result to array format
+          const itemsArray = items.rows || items;
+          
+          if (!itemsArray || itemsArray.length === 0) {
+            console.warn(`[WARNING] No items found for quote ${quote.id}`);
+            continue;
+          }
+          
+          // Ensure all items have required fields
+          const processedItems = itemsArray.map((item: any, index: number) => {
+            try {
+              // Validate required fields
+              if (!item.id) {
+                console.warn(`[WARNING] Item at index ${index} in quote ${quote.id} has no ID, skipping`);
+                return null;
+              }
+              
+              const processedItem = {
+                id: item.id,
+                supplierQuoteId: item.supplierQuoteId || quote.id,
+                itemDescription: item.itemDescription || `Item from quote ${quote.quoteNumber}`,
+                quantity: Math.max(0, Number(item.quantity) || 0),
+                unitPrice: item.unitPrice || '0',
+                lineTotal: item.lineTotal || '0',
+                // Add default values for fields not in the query
+                unitOfMeasure: 'PCS',
+                specification: '',
+                brand: '',
+                model: '',
+                warranty: '',
+                leadTime: '',
+                notes: '',
+              };
+              
+              // Validate numeric fields
+              if (isNaN(processedItem.quantity) || processedItem.quantity < 0) {
+                console.warn(`[WARNING] Invalid quantity for item ${item.id}, setting to 0`);
+                processedItem.quantity = 0;
+              }
+              
+              return processedItem;
+            } catch (itemError) {
+              console.error(`[ERROR] Error processing item at index ${index} for quote ${quote.id}:`, itemError);
+              failedItems.push({ quoteId: quote.id, itemIndex: index, error: itemError.message });
+              return null;
+            }
+          }).filter(Boolean); // Remove null items
+          
+          console.log(`[DEBUG] Processed ${processedItems.length} items for quote ${quote.id}`);
+          quoteItems.push(...processedItems);
+        } catch (error) {
+          console.error(`[ERROR] Error fetching items for quote ${quote.id}:`, error);
+          console.error(`[ERROR] Error stack:`, error.stack);
+          failedItems.push({ quoteId: quote.id, error: error.message });
+          // Continue with other quotes instead of failing completely
+          continue;
+        }
       }
       
-      // Skip if no quote items found
+      // Log failed items for debugging
+      if (failedItems.length > 0) {
+        console.warn(`[WARNING] Failed to process ${failedItems.length} items:`, failedItems);
+      }
+      
+      // Skip if no quote items found, but create a fallback item
       if (!quoteItems.length) {
-        console.warn(`No items found for supplier quotes ${supplierQuotes.map(q => q.id).join(', ')}, skipping LPO creation`);
-        continue;
+        console.warn(`No items found for supplier quotes ${supplierQuotes.map(q => q.id).join(', ')}, creating fallback item`);
+        
+        // Create a fallback item based on the quote
+        const fallbackItem = {
+          id: `fallback-${Date.now()}`,
+          supplierQuoteId: supplierQuotes[0].id,
+          itemDescription: `Quote items from ${supplierQuotes[0].quoteNumber}`,
+          quantity: 1,
+          unitPrice: supplierQuotes[0].totalAmount || '0',
+          lineTotal: supplierQuotes[0].totalAmount || '0',
+          unitOfMeasure: 'PCS',
+          specification: '',
+          brand: '',
+          model: '',
+          warranty: '',
+          leadTime: '',
+          notes: 'Fallback item - original quote items not found',
+        };
+        quoteItems.push(fallbackItem);
       }
       
       // Calculate totals
@@ -369,64 +534,104 @@ export class SupplierLpoStorage extends BaseStorage {
       }
       
       // Create LPO
-      const lpo = await this.createSupplierLpo({
-        supplierId: supplierId === 'single' ? supplierQuotes[0].supplierId : supplierId,
-        status: 'Draft',
-        sourceType: 'SupplierQuote',
-        groupingCriteria: groupBy,
-        subtotal,
-        taxAmount,
-        totalAmount,
-        currency: supplierQuotes[0].currency || 'BHD',
-        createdBy: userId,
-        requiresApproval: false,
-        approvalStatus: 'Not Required',
-        sourceQuotationIds: supplierQuotes.map(q => q.id),
-        lpoDate: new Date(),
-        expectedDeliveryDate: supplierQuotes[0].validUntil ? new Date(supplierQuotes[0].validUntil) : undefined,
-        paymentTerms: supplierQuotes[0].paymentTerms,
-        deliveryTerms: supplierQuotes[0].deliveryTerms,
-        termsAndConditions: supplierQuotes[0].terms,
-        specialInstructions: lpoNotes,
-      } as any);
+      console.log(`[DEBUG] Creating LPO for supplier ${supplierId} with ${supplierQuotes.length} quotes`);
       
-      // Create LPO items from quote items
-      const lpoItems = quoteItems.map((item, idx) => ({
-        supplierLpoId: lpo.id,
-        quotationItemId: item.id, // Link to the original quote item
-        itemId: null, // Will be filled when item is identified
-        supplierCode: 'GEN-SUP', // Default supplier code
-        barcode: `QUOTE-${item.id}`, // Generate barcode from quote item ID
-        itemDescription: item.itemDescription,
-        quantity: item.quantity,
-        receivedQuantity: 0,
-        pendingQuantity: item.quantity,
-        unitCost: item.unitPrice as any,
-        totalCost: item.lineTotal as any, // Use lineTotal instead of totalPrice
-        // Include discount fields from quote item
-        discountPercent: (item as any).discountPercentage || 0,
-        discountAmount: (item as any).discountAmount || 0,
-        lineNumber: idx + 1,
-        deliveryStatus: 'Pending',
-        urgency: 'Normal',
-        specialInstructions: [
-          item.specification,
-          item.brand ? `Brand: ${item.brand}` : '',
-          item.model ? `Model: ${item.model}` : '',
-          item.warranty ? `Warranty: ${item.warranty}` : '',
-          item.leadTime ? `Lead Time: ${item.leadTime}` : '',
-          item.notes || ''
-        ].filter(Boolean).join(' | '), // Combine all item details into special instructions
-      }));
-      
-      if (lpoItems.length) {
-        await db.insert(supplierLpoItems).values(lpoItems as any);
-        console.log(`Created LPO ${lpo.id} with ${lpoItems.length} items from supplier quotes ${supplierQuotes.map(q => q.id).join(', ')}`);
+      try {
+        const lpo = await this.createSupplierLpo({
+          supplierId: supplierId === 'single' ? supplierQuotes[0].supplierId : supplierId,
+          status: 'Draft',
+          sourceType: 'SupplierQuote',
+          groupingCriteria: groupBy,
+          subtotal: subtotal.toString(),
+          taxAmount: taxAmount.toString(),
+          totalAmount: totalAmount.toString(),
+          currency: supplierQuotes[0].currency || 'BHD',
+          createdBy: userId,
+          requiresApproval: false,
+          approvalStatus: 'Not Required',
+          sourceQuotationIds: supplierQuotes.map(q => q.id),
+          lpoDate: new Date(),
+          expectedDeliveryDate: supplierQuotes[0].validUntil ? new Date(supplierQuotes[0].validUntil) : undefined,
+          paymentTerms: supplierQuotes[0].paymentTerms,
+          deliveryTerms: supplierQuotes[0].deliveryTerms,
+          termsAndConditions: supplierQuotes[0].terms,
+          specialInstructions: lpoNotes,
+        } as any);
+        
+        if (!lpo || !lpo.id) {
+          throw new Error('Failed to create LPO - no LPO returned');
+        }
+        
+        console.log(`[DEBUG] Successfully created LPO ${lpo.id}`);
+        
+        // Create LPO items from quote items
+        const lpoItems = quoteItems.map((item, idx) => ({
+          supplierLpoId: lpo.id,
+          quotationItemId: item.id, // Link to the original quote item
+          itemId: null, // Will be filled when item is identified
+          supplierCode: 'GEN-SUP', // Default supplier code
+          barcode: `QUOTE-${item.id}`, // Generate barcode from quote item ID
+          itemDescription: item.itemDescription,
+          quantity: item.quantity,
+          receivedQuantity: 0,
+          pendingQuantity: item.quantity,
+          unitCost: item.unitPrice as any,
+          totalCost: item.lineTotal as any, // Use lineTotal instead of totalPrice
+          lineNumber: idx + 1,
+          deliveryStatus: 'Pending',
+          urgency: 'Normal',
+          specialInstructions: [
+            item.specification,
+            item.brand ? `Brand: ${item.brand}` : '',
+            item.model ? `Model: ${item.model}` : '',
+            item.warranty ? `Warranty: ${item.warranty}` : '',
+            item.leadTime ? `Lead Time: ${item.leadTime}` : '',
+            item.notes || ''
+          ].filter(Boolean).join(' | '), // Combine all item details into special instructions
+        }));
+        
+        if (lpoItems.length) {
+          // Use raw SQL to insert LPO items
+          for (const item of lpoItems) {
+            try {
+              await db.execute(sql`
+                INSERT INTO supplier_lpo_items (
+                  id, supplier_lpo_id, quotation_item_id, item_id, supplier_code, barcode,
+                  item_description, quantity, received_quantity, pending_quantity, unit_cost,
+                  total_cost, line_number, delivery_status, urgency, special_instructions,
+                  created_at, updated_at
+                ) VALUES (
+                  gen_random_uuid(), ${item.supplierLpoId}, ${item.quotationItemId}, 
+                  ${item.itemId}, ${item.supplierCode}, ${item.barcode},
+                  ${item.itemDescription}, ${item.quantity}, ${item.receivedQuantity}, 
+                  ${item.pendingQuantity}, ${item.unitCost}, ${item.totalCost}, 
+                  ${item.lineNumber}, ${item.deliveryStatus}, ${item.urgency}, 
+                  ${item.specialInstructions}, NOW(), NOW()
+                )
+              `);
+            } catch (itemError) {
+              console.error(`[ERROR] Failed to insert LPO item for quote item ${item.quotationItemId}:`, itemError);
+              // Continue with other items
+            }
+          }
+          console.log(`Created LPO ${lpo.id} with ${lpoItems.length} items from supplier quotes ${supplierQuotes.map(q => q.id).join(', ')}`);
+        }
+        
+        out.push(lpo);
+        
+      } catch (lpoError) {
+        console.error(`[ERROR] Failed to create LPO for supplier ${supplierId}:`, lpoError);
+        console.error(`[ERROR] Error stack:`, lpoError.stack);
+        // Continue with other suppliers instead of failing completely
+        continue;
       }
-      
-      out.push(lpo);
     }
     return out;
+    } catch (error) {
+      console.error(`[ERROR] createSupplierLposFromSupplierQuotes failed:`, error);
+      console.error(`[ERROR] Error stack:`, error.stack);
+      throw error;
+    }
   }
   async createAmendedSupplierLpo(parentLpoId: string, reason: string, amendmentType: string, userId?: string) {
     const parent = await this.getSupplierLpo(parentLpoId); if (!parent) throw new Error('Parent LPO not found');

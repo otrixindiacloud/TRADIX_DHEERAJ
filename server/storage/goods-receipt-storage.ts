@@ -830,6 +830,11 @@ export class GoodsReceiptStorage {
           unitOfMeasure: "EA", // Default unit of measure
           taxRate: "0",
           discountRate: "0",
+          storageLocation: item.storageLocation,
+          batchNumber: item.batchNumber,
+          expiryDate: item.expiryDate ? new Date(item.expiryDate).toISOString().split('T')[0] : undefined,
+          condition: item.condition || "Good",
+          notes: item.discrepancyReason,
           createdAt: new Date(),
           updatedAt: new Date(),
         };

@@ -764,7 +764,7 @@ export default function GoodsReceipt() {
                 unitOfMeasure: grItem.unitOfMeasure || 'PCS',
                 storageLocation: grItem.storageLocation,
                 batchNumber: grItem.batchNumber,
-                expiryDate: grItem.expiryDate,
+                expiryDate: grItem.expiryDate ? new Date(grItem.expiryDate).toISOString().split('T')[0] : undefined,
                 condition: grItem.condition || 'Good',
                 notes: grItem.notes
               };

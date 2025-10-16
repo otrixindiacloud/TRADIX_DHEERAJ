@@ -9,6 +9,13 @@ import { z } from "zod";
 import { generateInvoicePdf } from '../pdf/pdf-utils';
 import { sendPdf } from '../utils/pdf-response';
 
+// Helper function for number parsing
+function num(val: any): number { 
+  if (val === null || val === undefined) return 0; 
+  const n = typeof val === 'number' ? val : parseFloat(val); 
+  return isNaN(n) ? 0 : n; 
+}
+
 export function registerInvoiceRoutes(app: Express) {
   console.log("[INVOICE ROUTES] Registering invoice routes...");
   
@@ -316,6 +323,60 @@ export function registerInvoiceRoutes(app: Express) {
     } catch (error) {
       console.error("Error cancelling invoice:", error);
       res.status(500).json({ message: "Failed to cancel invoice" });
+    }
+  });
+
+  // Test endpoint to debug delivery items
+  app.post("/api/invoices/debug-delivery-items", async (req, res) => {
+    try {
+      const { deliveryId, selectedDeliveryItemIds } = req.body;
+      
+      if (!deliveryId) {
+        return res.status(400).json({ message: "Delivery ID is required" });
+      }
+      
+      // Get delivery items
+      const deliveryItems = await storage.getDeliveryItems(deliveryId);
+      const filteredItems = selectedDeliveryItemIds ? 
+        deliveryItems.filter(item => selectedDeliveryItemIds.includes(item.id)) : 
+        deliveryItems;
+      
+      // Get sales order items for each delivery item
+      const debugInfo = await Promise.all(filteredItems.map(async (di) => {
+        const soItem = di.salesOrderItemId ? 
+          await storage.getSalesOrderItem(di.salesOrderItemId) : null;
+        
+        const qty = num(di.deliveredQuantity || di.pickedQuantity || di.orderedQuantity || soItem?.quantity || 0);
+        const unitPrice = num(soItem?.unitPrice || di.unitPrice || 0);
+        const lineGross = qty * unitPrice;
+        
+        return {
+          deliveryItem: {
+            id: di.id,
+            deliveredQuantity: di.deliveredQuantity,
+            pickedQuantity: di.pickedQuantity,
+            orderedQuantity: di.orderedQuantity,
+            unitPrice: di.unitPrice,
+            totalPrice: di.totalPrice
+          },
+          salesOrderItem: soItem ? {
+            id: soItem.id,
+            quantity: soItem.quantity,
+            unitPrice: soItem.unitPrice,
+            totalPrice: soItem.totalPrice
+          } : null,
+          calculated: {
+            qty,
+            unitPrice,
+            lineGross
+          }
+        };
+      }));
+      
+      res.json({ debugInfo });
+    } catch (error) {
+      console.error("Error debugging delivery items:", error);
+      res.status(500).json({ message: "Failed to debug delivery items", error: error.message });
     }
   });
 

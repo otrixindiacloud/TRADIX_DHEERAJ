@@ -329,6 +329,7 @@ export class InvoiceStorage extends BaseStorage {
     let lineNumber = 1;
     for (const di of itemsToProcess as any[]) {
       console.log(`[DEBUG] Processing delivery item: ${di.id}`);
+      console.log(`[DEBUG] Current subtotal before processing item: ${subtotal}`);
       let soItemArr: any[] = [];
       const isValidSalesOrderItemId = di.salesOrderItemId && 
         di.salesOrderItemId !== null && 
@@ -372,6 +373,26 @@ export class InvoiceStorage extends BaseStorage {
       const qty = num(di.deliveredQuantity || di.pickedQuantity || di.orderedQuantity || soItem?.quantity || 0);
       const unitPrice = num(soItem?.unitPrice || di.unitPrice || 0);
       const lineGross = qty * unitPrice;
+      
+      console.log(`[DEBUG] Quantity calculation: deliveredQuantity=${di.deliveredQuantity}, pickedQuantity=${di.pickedQuantity}, orderedQuantity=${di.orderedQuantity}, soItem.quantity=${soItem?.quantity}, final qty=${qty}`);
+      console.log(`[DEBUG] Unit price calculation: soItem.unitPrice=${soItem?.unitPrice}, di.unitPrice=${di.unitPrice}, final unitPrice=${unitPrice}`);
+      console.log(`[DEBUG] Line gross calculation: qty=${qty} * unitPrice=${unitPrice} = ${lineGross}`);
+      
+      // Add error logging if qty or unitPrice is 0
+      if (qty === 0) {
+        console.log(`[ERROR] Quantity is 0 for delivery item ${di.id}:`, {
+          deliveredQuantity: di.deliveredQuantity,
+          pickedQuantity: di.pickedQuantity,
+          orderedQuantity: di.orderedQuantity,
+          soItemQuantity: soItem?.quantity
+        });
+      }
+      if (unitPrice === 0) {
+        console.log(`[ERROR] Unit price is 0 for delivery item ${di.id}:`, {
+          soItemUnitPrice: soItem?.unitPrice,
+          diUnitPrice: di.unitPrice
+        });
+      }
       const lineTotal = qty * unitPrice; // Correct total calculation
       const barcode = di.barcode || soItem?.barcode || `AUTO-${lineNumber}`;
       const supplierCode = di.supplierCode || soItem?.supplierCode || 'AUTO-SUP';
@@ -460,6 +481,7 @@ export class InvoiceStorage extends BaseStorage {
       
       if (!isValidItemId) {
         console.log(`[DEBUG] WARNING: No itemId found for delivery item ${di.id}, attempting to create minimal item...`);
+        console.log(`[DEBUG] Taking minimal item creation path for item ${di.id}`);
         
         // Try to create a minimal item as a last resort
         try {
@@ -504,9 +526,17 @@ export class InvoiceStorage extends BaseStorage {
         explicitDiscAmt = (lineGross / basis) * num((quotationHeader as any)?.discountAmount);
       }
       const percDiscAmt = (lineGross * discPerc) / 100;
-      const lineDiscount = explicitDiscAmt > 0 ? explicitDiscAmt : percDiscAmt;
+      let lineDiscount = explicitDiscAmt > 0 ? explicitDiscAmt : percDiscAmt;
+      // Guard: discount should never be 100% of the gross amount (cap at 99.9%)
+      const maxDiscount = lineGross * 0.999;
+      if (lineDiscount >= lineGross) {
+        console.log(`[WARNING] Discount ${lineDiscount} equals or exceeds gross ${lineGross} for item ${di.id}, capping at 99.9%`);
+        lineDiscount = maxDiscount;
+      }
+      console.log(`[DEBUG] Discount calc for item ${di.id}: lineGross=${lineGross}, discPerc=${discPerc}, explicitDiscAmt=${explicitDiscAmt}, percDiscAmt=${percDiscAmt}, lineDiscount=${lineDiscount}`);
       totalDiscount += lineDiscount;
-      const lineNet = Math.max(0, lineGross - lineDiscount);
+      const lineNet = Math.max(0.01, lineGross - lineDiscount); // Ensure minimum of 0.01
+      console.log(`[DEBUG] After item ${di.id}: lineNet=${lineNet}, lineGross=${lineGross}, lineDiscount=${lineDiscount}, subtotal now=${subtotal + lineNet}`);
       subtotal += lineNet; // Use net amount after discount for subtotal
 
       const lineTax = lineNet * 0.10;
@@ -543,6 +573,8 @@ export class InvoiceStorage extends BaseStorage {
         }
       }
       
+      console.log(`[DEBUG] Taking normal item processing path for item ${di.id}`);
+      
       // Ensure we have all required fields - but be more lenient with barcode and supplierCode
       // since they might not be available in sales order items due to schema limitations
       if (!baseDesc) {
@@ -567,9 +599,17 @@ export class InvoiceStorage extends BaseStorage {
         explicitDiscAmt2 = Math.round(((lineGross / basis2) * num((quotationHeader as any)?.discountAmount)) * 100) / 100;
       }
       const percDiscAmt2 = Math.round(((lineGross * discPerc2) / 100) * 100) / 100;
-      const lineDiscount2 = explicitDiscAmt2 > 0 ? explicitDiscAmt2 : percDiscAmt2;
+      let lineDiscount2 = explicitDiscAmt2 > 0 ? explicitDiscAmt2 : percDiscAmt2;
+      // Guard: discount should never be 100% of the gross amount (cap at 99.9%)
+      const maxDiscount2 = lineGross * 0.999;
+      if (lineDiscount2 >= lineGross) {
+        console.log(`[WARNING] Discount ${lineDiscount2} equals or exceeds gross ${lineGross} for item ${di.id}, capping at 99.9%`);
+        lineDiscount2 = maxDiscount2;
+      }
+      console.log(`[DEBUG] Discount calc for item ${di.id} (path 2): lineGross=${lineGross}, discPerc2=${discPerc2}, explicitDiscAmt2=${explicitDiscAmt2}, percDiscAmt2=${percDiscAmt2}, lineDiscount2=${lineDiscount2}`);
       totalDiscount += lineDiscount2;
-      const lineNet2 = Math.max(0, Math.round((lineGross - lineDiscount2) * 100) / 100);
+      const lineNet2 = Math.max(0.01, Math.round((lineGross - lineDiscount2) * 100) / 100); // Ensure minimum of 0.01
+      console.log(`[DEBUG] After item ${di.id} (path 2): lineNet2=${lineNet2}, lineGross=${lineGross}, lineDiscount2=${lineDiscount2}, subtotal now=${subtotal + lineNet2}`);
       subtotal += lineNet2; // Use net amount after discount for subtotal
 
       const lineTax = Math.round((lineNet2 * 0.10) * 100) / 100;
@@ -602,6 +642,12 @@ export class InvoiceStorage extends BaseStorage {
     console.log(`[DEBUG] Subtotal calculated: ${subtotal}`);
     console.log(`[DEBUG] Invoice items to insert: ${invoiceItemsToInsert.length}`);
     console.log(`[DEBUG] Items processed: ${itemsToProcess.length}`);
+    console.log(`[DEBUG] Invoice items total prices:`, invoiceItemsToInsert.map(item => ({
+      deliveryItemId: item.deliveryItemId,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      totalPrice: item.totalPrice
+    })));
     
     if (invoiceItemsToInsert.length === 0) {
       console.log(`[DEBUG] ERROR: No valid items found for invoice generation`);
@@ -632,7 +678,36 @@ export class InvoiceStorage extends BaseStorage {
     }
     
     if (subtotal <= 0) {
-      throw new Error('Invoice subtotal must be greater than zero');
+      console.log(`[ERROR] Subtotal is ${subtotal}, invoice items count: ${invoiceItemsToInsert.length}`);
+      console.log(`[ERROR] Items processed: ${itemsToProcess.length}`);
+      console.log(`[ERROR] Debug info for each item:`);
+      for (let i = 0; i < itemsToProcess.length; i++) {
+        const di = itemsToProcess[i];
+        const soItem = Array.isArray(salesOrderItems) ? 
+          salesOrderItems.find(soi => soi.id === di.salesOrderItemId) : 
+          null;
+        const qty = num(di.deliveredQuantity || di.pickedQuantity || di.orderedQuantity || soItem?.quantity || 0);
+        const unitPrice = num(soItem?.unitPrice || di.unitPrice || 0);
+        const lineGross = qty * unitPrice;
+        console.log(`[ERROR] Item ${i+1}: qty=${qty}, unitPrice=${unitPrice}, lineGross=${lineGross}`);
+      }
+      // Calculate subtotal from invoice items as a fallback
+      const calculatedSubtotal = invoiceItemsToInsert.reduce((sum, item) => sum + num(item.totalPrice), 0);
+      console.log(`[ERROR] Calculated subtotal from invoice items: ${calculatedSubtotal}`);
+      
+      // If we have invoice items with valid totals, use that as the subtotal
+      if (calculatedSubtotal > 0) {
+        console.log(`[FIX] Using calculated subtotal ${calculatedSubtotal} instead of accumulated subtotal ${subtotal}`);
+        subtotal = calculatedSubtotal;
+      } else {
+        throw new Error(`Invoice subtotal must be greater than zero. Subtotal: ${subtotal}, Calculated: ${calculatedSubtotal}, Items: ${invoiceItemsToInsert.length}, ItemsToProcess: ${itemsToProcess.length}, LineGross values: ${itemsToProcess.map(di => {
+          const soItem = Array.isArray(salesOrderItems) ? salesOrderItems.find(soi => soi.id === di.salesOrderItemId) : null;
+          const qty = num(di.deliveredQuantity || di.pickedQuantity || di.orderedQuantity || soItem?.quantity || 0);
+          const unitPrice = num(soItem?.unitPrice || di.unitPrice || 0);
+          const lineGross = qty * unitPrice;
+          return `${di.id}:${lineGross}`;
+        }).join(',')}`);
+      }
     }
     
     console.log(`[DEBUG] Validation passed - proceeding with invoice creation`);

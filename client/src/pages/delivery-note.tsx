@@ -196,12 +196,29 @@ export default function DeliveryNote() {
         <head>
           <title>Print Delivery Note</title>
           <style>
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 0.5in;
+              }
+              body {
+                background: white !important;
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+            
             body {
               font-family: 'Segoe UI', Arial, sans-serif;
               background: #f8fafc;
               padding: 32px;
               color: #3b4252;
+              margin: 0;
             }
+            
             .header {
               background: #f3f4f6;
               border-radius: 12px;
@@ -209,6 +226,7 @@ export default function DeliveryNote() {
               margin-bottom: 18px;
               box-shadow: 0 2px 8px rgba(60, 60, 60, 0.04);
             }
+            
             h1 {
               font-size: 2.2rem;
               font-weight: 700;
@@ -216,17 +234,20 @@ export default function DeliveryNote() {
               margin-bottom: 4px;
               letter-spacing: 1px;
             }
+            
             h2 {
               font-size: 1.3rem;
               color: #5e81ac;
               margin-bottom: 12px;
             }
+            
             .info {
               display: grid;
               grid-template-columns: 1fr 1fr;
               gap: 12px 32px;
               margin-bottom: 18px;
             }
+            
             .info p {
               margin: 0;
               font-size: 1rem;
@@ -235,12 +256,14 @@ export default function DeliveryNote() {
               padding: 6px 12px;
               border: 1px solid #ececec;
             }
+            
             h3 {
               font-size: 1.1rem;
               color: #7b8fa1;
               margin-top: 24px;
               margin-bottom: 8px;
             }
+            
             table {
               width: 100%;
               border-collapse: collapse;
@@ -250,25 +273,79 @@ export default function DeliveryNote() {
               overflow: hidden;
               box-shadow: 0 1px 4px rgba(60,60,60,0.04);
             }
+            
             th, td {
               border: 1px solid #e5e7eb;
-              padding: 10px 12px;
-              font-size: 0.98rem;
+              padding: 12px 16px;
+              font-size: 0.95rem;
+              text-align: left;
             }
+            
             th {
               background: #f3f4f6;
               color: #6b7280;
               font-weight: 600;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
             }
+            
             tr:nth-child(even) td {
               background: #f9fafb;
             }
+            
             .total {
               font-size: 1.2rem;
               color: #5e81ac;
               font-weight: 600;
               margin-top: 24px;
               text-align: right;
+            }
+            
+            .delivery-info {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 20px;
+              padding: 16px;
+              background: #f8fafc;
+              border-radius: 8px;
+              border: 1px solid #e5e7eb;
+            }
+            
+            .delivery-number {
+              font-size: 1.1rem;
+              font-weight: 600;
+              color: #374151;
+            }
+            
+            .delivery-date {
+              font-size: 0.95rem;
+              color: #6b7280;
+            }
+            
+            .status-badge {
+              display: inline-block;
+              padding: 4px 12px;
+              border-radius: 20px;
+              font-size: 0.85rem;
+              font-weight: 600;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            
+            .status-complete {
+              background: #d1fae5;
+              color: #065f46;
+            }
+            
+            .status-pending {
+              background: #fef3c7;
+              color: #92400e;
+            }
+            
+            .status-in-progress {
+              background: #dbeafe;
+              color: #1e40af;
             }
           </style>
         </head>
@@ -277,44 +354,56 @@ export default function DeliveryNote() {
             <h1>Tradix ERP Golden Tag</h1>
             <h2>Delivery Note Details</h2>
           </div>
-          <div class="info">
-            <p><strong>Delivery Number:</strong> ${deliveryNote.deliveryNumber || 'N/A'}</p>
-            <p><strong>Customer:</strong> ${deliveryNote.salesOrder?.customer?.name || 'N/A'}</p>
-            <p><strong>Status:</strong> ${deliveryNote.status || 'N/A'}</p>
-            <p><strong>Type:</strong> ${deliveryNote.deliveryType || 'N/A'}</p>
-            <p><strong>Delivery Date:</strong> ${deliveryNote.deliveryDate ? new Date(deliveryNote.deliveryDate).toLocaleDateString() : 'Not scheduled'}</p>
-            <p><strong>Tracking Number:</strong> ${deliveryNote.trackingNumber || 'N/A'}</p>
+          
+          <div class="delivery-info">
+            <div>
+              <div class="delivery-number">Delivery Number: ${deliveryNote.deliveryNumber || 'N/A'}</div>
+              <div class="delivery-date">Date: ${deliveryNote.deliveryDate ? new Date(deliveryNote.deliveryDate).toLocaleDateString() : 'Not scheduled'}</div>
+            </div>
+            <div>
+              <span class="status-badge status-${(deliveryNote.status || '').toLowerCase().replace(' ', '-')}">${deliveryNote.status || 'N/A'}</span>
+            </div>
           </div>
-          <h3>Items</h3>
+          
+          <div class="info">
+            <p><strong>Customer:</strong> ${deliveryNote.salesOrder?.customer?.name || 'N/A'}</p>
+            <p><strong>Type:</strong> ${deliveryNote.deliveryType || 'N/A'}</p>
+            <p><strong>Tracking Number:</strong> ${deliveryNote.trackingNumber || 'N/A'}</p>
+            <p><strong>Sales Order:</strong> ${deliveryNote.salesOrder?.orderNumber || 'N/A'}</p>
+          </div>
+          
+          <h3>Delivery Items</h3>
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Description</th>
-                <th>Unit Price</th>
-                <th>Quantity</th>
+                <th style="width: 30%;">Item Name</th>
+                <th style="width: 40%;">Description</th>
+                <th style="width: 15%; text-align: right;">Unit Price</th>
+                <th style="width: 15%; text-align: right;">Quantity</th>
               </tr>
             </thead>
             <tbody>
               ${deliveryItems.map((item: any) => `
                 <tr>
-                  <td>${item.name || item.itemName || item.description || ''}</td>
-                  <td>${item.description || item.itemDescription || ''}</td>
-                  <td>${currency} ${(() => {
+                  <td><strong>${item.name || item.itemName || item.description || 'N/A'}</strong></td>
+                  <td>${item.description || item.itemDescription || '-'}</td>
+                  <td style="text-align: right;">${currency} ${(() => {
                     const qty = getNumber(item.deliveredQuantity || item.pickedQuantity || item.orderedQuantity || item.quantity || item.qty || 0);
                     const unitRaw = getNumber(item.unitPrice || item.price || item.rate || 0);
                     const totalLine = getNumber(item.totalPrice || 0);
                     const unit = unitRaw > 0 ? unitRaw : (qty > 0 && totalLine > 0 ? (totalLine / qty) : 0);
                     return unit.toFixed(2);
                   })()}</td>
-                  <td>${item.deliveredQuantity || item.pickedQuantity || item.orderedQuantity || item.quantity || ''}</td>
+                  <td style="text-align: right;"><strong>${item.deliveredQuantity || item.pickedQuantity || item.orderedQuantity || item.quantity || '0'}</strong></td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
+          
           <div class="total"> 
-            <div style="display:inline-block; min-width: 260px; text-align:right;">
-              <div><strong>Total Amount:</strong> ${currency} ${subtotal.toFixed(2)}</div>
+            <div style="display:inline-block; min-width: 300px; text-align:right; padding: 16px; background: #f8fafc; border-radius: 8px; border: 1px solid #e5e7eb;">
+              <div style="font-size: 1.1rem; margin-bottom: 8px;"><strong>Total Amount: ${currency} ${subtotal.toFixed(2)}</strong></div>
+              <div style="font-size: 0.9rem; color: #6b7280;">Items: ${deliveryItems.length}</div>
             </div>
           </div>
         </body>

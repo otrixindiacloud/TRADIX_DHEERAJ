@@ -860,9 +860,9 @@ export function buildEnhancedPurchaseInvoicePdf(ctx: PurchaseInvoicePdfContext):
   const itemRows = items.map((it:any,i:number)=> {
     const qty = Number(it.quantity) || 0;
     const unit = Number(it.unitPrice) || 0;
+    const gross = qty * unit;
     // Handle both discountPercentage and discountRate field names
     const discPerc = Number(it.discountPercentage || it.discountRate) || (gross > 0 ? 5 : 0);
-    const gross = qty * unit;
     const discAmt = gross * discPerc / 100;
     const net = gross - discAmt;
     // Use default 10% VAT if not specified and we have valid amounts

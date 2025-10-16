@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast, useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { CalendarIcon, Package, Truck, FileText, Plus, Search, Filter, RefreshCw, CheckCircle, XCircle, Clock, Send, Eye, DollarSign, Building2, Printer } from "lucide-react";
+import { CalendarIcon, Package, Truck, FileText, Plus, Search, Filter, RefreshCw, CheckCircle, XCircle, Clock, Send, Eye, DollarSign, Building2, Download } from "lucide-react";
 import { Pencil } from "lucide-react";
   // Remove this block from the top-level scope and place it inside SupplierLpoPage after:
   //   const [editLpo, setEditLpo] = useState<SupplierLpo | null>(null);
@@ -65,7 +65,6 @@ export default function SupplierLpoPage() {
   const [editLpo, setEditLpo] = useState<SupplierLpo | null>(null);
   const [viewingOrder, setViewingOrder] = useState<any>(null);
   const [readyForLpoOrders, setReadyForLpoOrders] = useState<any[]>([]);
-  const [printingLpoId, setPrintingLpoId] = useState<string | null>(null);
   const [viewingOrderItems, setViewingOrderItems] = useState<any[]>([]);
 
   // Mutation for editing LPO (moved from top-level)
@@ -77,6 +76,7 @@ export default function SupplierLpoPage() {
     onSuccess: () => {
       toast({ title: "Success", description: "LPO updated successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos", { status: "Confirmed" }] });
       setEditLpo(null);
     },
     onError: (error: any) => {
@@ -115,6 +115,7 @@ export default function SupplierLpoPage() {
     onSuccess: () => {
       toast({ title: "Success", description: "Expected delivery date updated successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos", { status: "Confirmed" }] });
       setSettingDeliveryLpoId(null);
       setCalendarDate("");
       setEditLpo(null);
@@ -254,6 +255,7 @@ export default function SupplierLpoPage() {
         description: "LPO generated successfully from supplier quote",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos", { status: "Confirmed" }] });
       queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos", "for-filtering"] });
       queryClient.invalidateQueries({ queryKey: ["/api/supplier-quotes", "ready-for-lpo"] });
       queryClient.invalidateQueries({ queryKey: ["/api/suppliers", "for-enrichment"] });
@@ -276,6 +278,7 @@ export default function SupplierLpoPage() {
     onSuccess: () => {
       toast({ title: "Success", description: "LPO sent to supplier successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos", { status: "Confirmed" }] });
     },
     onError: (error: any) => {
       toast({ 
@@ -295,6 +298,7 @@ export default function SupplierLpoPage() {
     onSuccess: () => {
       toast({ title: "Success", description: "LPO approved successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos", { status: "Confirmed" }] });
     },
     onError: (error: any) => {
       toast({ 
@@ -497,247 +501,40 @@ export default function SupplierLpoPage() {
     return words.trim();
   };
 
-  // Generate printable HTML for an LPO (refined to closely match the provided quotation UI)
-  const buildLpoPrintHtml = (
-    lpo: SupplierLpo & { supplierName?: string; supplierContactPerson?: string },
-    items: any[],
-    supplier: any
-  ) => {
-    const issueDate = lpo.lpoDate ? format(new Date(lpo.lpoDate), "dd/MM/yyyy") : "-";
-    const expectedDelivery = lpo.expectedDeliveryDate ? format(new Date(lpo.expectedDeliveryDate), "dd/MM/yyyy") : "-";
-    // If there is no explicit validity date, assume 30 days from issue or use expected delivery
-    let validUntil = expectedDelivery;
-    if (!lpo.expectedDeliveryDate && lpo.lpoDate) {
-      const d = new Date(lpo.lpoDate); d.setDate(d.getDate() + 30); validUntil = format(d, 'dd/MM/yyyy');
-    }
-    const subtotal = Number(lpo.subtotal || 0);
-    const taxAmount = Number(lpo.taxAmount || 0);
-    const total = Number(lpo.totalAmount || subtotal + taxAmount);
-    const currency = lpo.currency || 'BHD';
-    
-    // Calculate total discount from items
-    const totalDiscountAmount = items.reduce((sum, it) => {
-      const qty = Number(it.quantity || 0);
-      const unitCost = Number(it.unitCost || 0);
-      const grossAmount = qty * unitCost;
-      const discountPercent = Number(it.discountPercent || 0);
-      const discountAmount = Number(it.discountAmount || 0);
-      const calculatedDiscountAmount = discountAmount > 0 ? discountAmount : (grossAmount * discountPercent / 100);
-      return sum + calculatedDiscountAmount;
-    }, 0);
-    
-    const netAmount = subtotal - totalDiscountAmount;
-    const vatPercent = subtotal ? ((taxAmount / subtotal) * 100) : 0;
-    const amountWords = `${currency} ${numberToWords(Math.floor(total))} ONLY`;
 
-    const rowsHtml = items.map((it: any, idx: number) => {
-      const qty = Number(it.quantity || 0);
-      const unitCost = Number(it.unitCost || 0);
-      const grossAmount = qty * unitCost;
-      
-      // Get discount values from the item (using correct field names from database)
-      const discountPercent = Number(it.discount_percent || 0);
-      const discountAmount = Number(it.discount_amount || 0);
-      
-      // Calculate discount amount if percentage is provided but amount is not
-      const calculatedDiscountAmount = discountAmount > 0 ? discountAmount : (grossAmount * discountPercent / 100);
-      
-      const lineNet = grossAmount - calculatedDiscountAmount; // before VAT
-      const vatAmt = vatPercent ? (lineNet * (vatPercent/100)) : 0;
-      
-      return `<tr>
-        <td style="border:1px solid #000;padding:4px 6px;font-size:11px;text-align:center;">${idx + 1}</td>
-        <td style="border:1px solid #000;padding:4px 6px;font-size:11px;">${(it.itemDescription || '').replace(/</g,'&lt;')}</td>
-        <td style="border:1px solid #000;padding:4px 6px;font-size:10px;text-align:center;">${qty}<br/><span style=\"font-size:9px;color:#555\">PCS</span></td>
-        <td style="border:1px solid #000;padding:4px 6px;font-size:10px;text-align:center;">${currency} ${unitCost.toFixed(3)}</td>
-        <td style="border:1px solid #000;padding:4px 6px;font-size:10px;text-align:center;">${discountPercent.toFixed(0)}%</td>
-        <td style="border:1px solid #000;padding:4px 6px;font-size:10px;text-align:center;">${currency} ${calculatedDiscountAmount.toFixed(3)}</td>
-        <td style="border:1px solid #000;padding:4px 6px;font-size:10px;text-align:center;">${currency} ${lineNet.toFixed(3)}</td>
-        <td style="border:1px solid #000;padding:4px 6px;font-size:10px;text-align:center;">${vatPercent ? vatPercent.toFixed(0) : '0'}%</td>
-        <td style="border:1px solid #000;padding:4px 6px;font-size:10px;text-align:center;">${currency} ${vatAmt.toFixed(3)}</td>
-      </tr>`;
-    }).join('');
-
-    // Branding constants (could move to config)
-    const companyName = 'GOLDEN TAG';
-    const companyTag = 'Trading & Supply Company';
-    const companyAddr = 'Kingdom of Bahrain';
-    const companyMobile = '+973 XXXX XXXX';
-    const companyEmail = 'info@goldentag.com';
-
-    return `<!DOCTYPE html><html><head><meta charset="utf-8" />
-    <title>LPO ${lpo.lpoNumber}</title>
-    <style>
-      body { font-family: Arial, Helvetica, sans-serif; margin:18px 26px; color:#000; font-size:11px; }
-      table { border-collapse: collapse; width:100%; }
-      .brand { font-size:26px; font-weight:700; letter-spacing:1px; color:#C9A227; }
-      .right-title { font-size:20px; font-weight:700; }
-      .meta-table th, .meta-table td { font-size:11px; padding:4px 6px; border:1px solid #000; }
-      .meta-table th { background:#eee; text-align:left; }
-      .sub-block { border:1px solid #000; padding:6px 8px; font-size:11px; }
-      .items thead th { border:1px solid #000; font-size:11px; padding:6px 6px; background:#f5f5f5; }
-      .items td { vertical-align:top; }
-      .totals td { padding:3px 4px; font-size:11px; }
-      .totals tr td:first-child { text-align:right; }
-      .totals tr td:last-child { text-align:right; min-width:110px; }
-      .remarks-box { border:1px solid #000; height:55px; padding:6px 8px; font-size:11px; }
-      .signature-line { margin-top:40px; display:flex; justify-content:space-between; font-size:11px; }
-      .signature-line div { text-align:center; width:45%; }
-      .signature-line span { display:inline-block; margin-top:60px; border-top:1px solid #000; padding-top:4px; }
-      .gold-rule { height:2px; background:#C9A227; margin:36px 0 8px; }
-      .footer { margin-top:4px; text-align:center; font-size:9px; color:#444; }
-      @media print { body { margin:10mm 12mm; } }
-    </style></head><body>
-      <table style="width:100%; margin-bottom:12px;">
-        <tr>
-          <td style="vertical-align:top;">
-            <div class="brand">${companyName}</div>
-            <div style="margin-top:6px; font-size:11px; line-height:1.5;">
-              ${companyTag}<br/>${companyAddr}<br/>Mobile : ${companyMobile}<br/>Email: ${companyEmail}
-            </div>
-          </td>
-          <td style="vertical-align:top; text-align:right;">
-            <div class="right-title">LPO</div>
-            <table style="font-size:11px; margin-top:4px; line-height:1.4; float:right;">
-              <tr><td style="padding:2px 6px;">Date:</td><td style="padding:2px 6px;">${issueDate}</td></tr>
-              <tr><td style="padding:2px 6px;">LPO #:</td><td style="padding:2px 6px;">${lpo.lpoNumber}</td></tr>
-              <tr><td style="padding:2px 6px;">Valid Until:</td><td style="padding:2px 6px;">${validUntil}</td></tr>
-              <tr><td style="padding:2px 6px;">Status:</td><td style="padding:2px 6px;">${lpo.status || 'Draft'}</td></tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-
-      <table class="meta-table" style="margin-bottom:8px;">
-        <tr>
-          <th style="width:16%;">LPO No</th>
-          <th style="width:16%;">LPO Date</th>
-          <th style="width:20%;">Supplier Name</th>
-          <th style="width:16%;">Payment Terms</th>
-          <th style="width:16%;">Delivery Terms</th>
-          <th style="width:16%;">Currency</th>
-        </tr>
-        <tr>
-          <td>${lpo.lpoNumber}</td>
-          <td>${issueDate}</td>
-          <td>${supplier?.name || lpo.supplierName || '-'}</td>
-          <td>${lpo.paymentTerms || '30 Days'}</td>
-          <td>${lpo.deliveryTerms || 'Standard'}</td>
-          <td>${currency}</td>
-        </tr>
-      </table>
-
-      <table style="width:100%; margin-bottom:12px;">
-        <tr>
-          <td class="sub-block" style="width:55%;">
-            <strong>Supplier Name & Address:</strong><br/>
-            ${(supplier?.name || lpo.supplierName || '-')}
-            ${supplier?.address ? `<br/>${supplier.address}` : ''}
-            ${supplier?.phone ? `<br/>${supplier.phone}` : ''}
-          </td>
-            <td class="sub-block" style="width:45%;">
-            <strong>Supplier Contact Person:</strong><br/>
-            ${(supplier?.contactPerson || lpo.supplierContactPerson || '-')}
-            ${supplier?.email ? `<br/>${supplier.email}` : ''}
-            ${supplier?.phone ? `<br/>${supplier.phone}` : ''}
-          </td>
-        </tr>
-      </table>
-
-      <table class="items" style="width:100%; margin-bottom:14px;">
-        <thead>
-          <tr>
-            <th style="width:4%;">S/N</th>
-            <th>Item Description & Specifications</th>
-            <th style="width:7%;">Qty</th>
-            <th style="width:8%;">Unit Rate</th>
-            <th style="width:6%;">Disc %</th>
-            <th style="width:9%;">Disc Amt</th>
-            <th style="width:10%;">Net Total</th>
-            <th style="width:6%;">VAT %</th>
-            <th style="width:9%;">VAT Amt</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rowsHtml || `<tr><td colspan=\"9\" style=\"border:1px solid #000;padding:12px;text-align:center;font-size:11px;color:#666;\">No items added to this LPO yet</td></tr>`}
-        </tbody>
-      </table>
-
-      <table style="width:50%; margin-left:auto; margin-bottom:16px;" class="totals">
-        <tr><td>Total Amount</td><td>${currency} ${subtotal.toFixed(3)}</td></tr>
-        <tr><td>Discount Amount</td><td>${currency} ${totalDiscountAmount.toFixed(3)}</td></tr>
-        <tr><td>Net Amount</td><td>${currency} ${netAmount.toFixed(3)}</td></tr>
-        <tr><td>VAT Amount</td><td>${currency} ${taxAmount.toFixed(3)}</td></tr>
-        <tr><td style="font-weight:700;">Grand Total</td><td style="font-weight:700;">${currency} ${total.toFixed(3)}</td></tr>
-      </table>
-
-      <div style="font-size:11px; margin-bottom:10px;"><strong>${currency} In Words:</strong><br/>${amountWords}</div>
-      <div style="margin-bottom:8px; font-size:11px;"><strong>Remarks:</strong></div>
-      <div class="remarks-box">${(lpo as any).notes ? (String((lpo as any).notes).replace(/</g,'&lt;')) : ''}</div>
-      <div style="font-size:10px; margin-top:6px;">This LPO is valid until ${validUntil}</div>
-
-      <div class="signature-line">
-        <div><span>Authorized Signatory</span></div>
-        <div><span>Supplier Signature Date & Stamp</span></div>
-      </div>
-
-      <div class="gold-rule"></div>
-      <div class="footer">Thank you for your business!<br/>${companyName} - Your Trusted Trading Partner<br/>${companyAddr} | Mobile: ${companyMobile} | Email: ${companyEmail}</div>
-    </body></html>`;
-  };
-
-  // Print LPO using hidden iframe to avoid popup blockers
-  const printLpo = async (lpo: SupplierLpo & { supplierName?: string }) => {
-    if (printingLpoId) return; // prevent concurrent prints
-    setPrintingLpoId(lpo.id);
+  // Download LPO as PDF
+  const downloadLpoPdf = async (lpo: SupplierLpo & { supplierName?: string }) => {
     try {
-      // Fetch items & supplier in parallel
-      const [itemsRes, supplierRes] = await Promise.all([
-        fetch(`/api/supplier-lpos/${lpo.id}/items`),
-        lpo.supplierId ? fetch(`/api/suppliers/${lpo.supplierId}`) : Promise.resolve(null as any)
-      ]);
-      const items = itemsRes.ok ? await itemsRes.json() : [];
-      const supplier = supplierRes && supplierRes.ok ? await supplierRes.json() : null;
+      const response = await fetch(`/api/supplier-lpos/${lpo.id}/pdf`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
 
-      const html = buildLpoPrintHtml(lpo as any, items, supplier);
-
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      document.body.appendChild(iframe);
-
-      const doc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (!doc) throw new Error('Unable to access print frame');
-      doc.open();
-      doc.write(html);
-      doc.close();
-
-      // Give the browser a moment to layout
-      setTimeout(() => {
-        try {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-        } catch (err) {
-          console.error('Print error:', err);
-          toast({ title: 'Print Error', description: 'Failed to trigger print dialog', variant: 'destructive' });
-        } finally {
-          // Cleanup frame after a delay (allow print dialog to open)
-          setTimeout(() => {
-            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-          }, 2000);
-          setPrintingLpoId(null);
-        }
-      }, 300);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lpo-${lpo.lpoNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: "PDF Downloaded",
+        description: `LPO ${lpo.lpoNumber} has been downloaded successfully.`,
+      });
     } catch (error: any) {
-      console.error('Error printing LPO:', error);
-      toast({ title: 'Error', description: error.message || 'Failed to prepare LPO for printing', variant: 'destructive' });
-      setPrintingLpoId(null);
+      console.error('Error downloading LPO PDF:', error);
+      toast({ 
+        title: 'Error', 
+        description: error.message || 'Failed to download LPO PDF', 
+        variant: 'destructive' 
+      });
     }
   };
+
 
   return (
     <div className="space-y-6 p-6">
@@ -790,6 +587,7 @@ export default function SupplierLpoPage() {
                 onCreated={() => {
                   setShowCreateLpo(false);
                   queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos", { status: "Confirmed" }] });
                 }}
               />
             </div>
@@ -1335,13 +1133,12 @@ export default function SupplierLpoPage() {
                             className="h-8 w-8 p-0"
                             onClick={(e) => {
                               e.stopPropagation();
-                              printLpo(lpo);
+                              downloadLpoPdf(lpo);
                             }}
-                            disabled={printingLpoId === lpo.id}
-                            title={printingLpoId === lpo.id ? 'Preparing...' : 'Print LPO'}
-                            data-testid={`button-print-${lpo.id}`}
+                            title="Download LPO PDF"
+                            data-testid={`button-download-pdf-${lpo.id}`}
                           >
-                            <Printer className="w-4 h-4" />
+                            <Download className="w-4 h-4" />
                           </Button>
                         </div>
                       </TableCell>
@@ -2597,6 +2394,7 @@ function CreateLpoForm({ onClose, onCreated }: { onClose: () => void; onCreated:
         description: "LPO created successfully" 
       });
       queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos", { status: "Confirmed" }] });
       onClose();
       if (onCreated) onCreated();
     },

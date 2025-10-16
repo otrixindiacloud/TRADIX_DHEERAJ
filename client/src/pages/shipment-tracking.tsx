@@ -26,7 +26,8 @@ import {
   Building2,
   User,
   ShoppingCart,
-  DollarSign
+  DollarSign,
+  RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -340,6 +341,7 @@ export default function ShipmentTrackingPage() {
   const [newStatus, setNewStatus] = useState<string>("");
   const [newLocation, setNewLocation] = useState<string>("");
   const [confirmedLpoData, setConfirmedLpoData] = useState<any>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [generateFormData, setGenerateFormData] = useState({
     lpoId: "",
     lpoNumber: "",
@@ -495,6 +497,15 @@ export default function ShipmentTrackingPage() {
       console.log('No stored LPO data found');
     }
   }, []);
+
+  // Auto-refresh confirmed LPOs every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos", { status: "Confirmed" }] });
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [queryClient]);
 
   // Mock data for development - replace with actual API call
   const mockShipments: Shipment[] = [
@@ -1392,6 +1403,27 @@ export default function ShipmentTrackingPage() {
                 <p className="text-gray-600 mt-1">Generate shipment tracking for confirmed LPOs</p>
               </div>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                setIsRefreshing(true);
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos", { status: "Confirmed" }] }),
+                  queryClient.invalidateQueries({ queryKey: ["/api/supplier-lpos"] })
+                ]);
+                toast({
+                  title: "Data Refreshed",
+                  description: "LPO data has been refreshed successfully",
+                });
+                setTimeout(() => setIsRefreshing(false), 1000); // Show loading for 1 second
+              }}
+              disabled={isRefreshing}
+              className="flex items-center gap-2 text-green-700 border-green-300 hover:bg-green-50 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>

@@ -586,6 +586,9 @@ export const supplierLpoItems = pgTable("supplier_lpo_items", {
   // Discount fields
   discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }).default("0"),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }).default("0"),
+  // VAT fields
+  vatPercent: decimal("vat_percent", { precision: 5, scale: 2 }).default("0"),
+  vatAmount: decimal("vat_amount", { precision: 10, scale: 2 }).default("0"),
   // Delivery
   requestedDeliveryDate: timestamp("requested_delivery_date"),
   confirmedDeliveryDate: timestamp("confirmed_delivery_date"),
