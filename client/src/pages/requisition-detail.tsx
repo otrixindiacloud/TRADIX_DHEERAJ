@@ -111,6 +111,19 @@ export default function RequisitionDetailPage() {
     }
   });
 
+  // Fetch suppliers for dropdown
+  const { data: suppliers = [], isLoading: suppliersLoading } = useQuery({
+    queryKey: ['/api/suppliers'],
+    queryFn: async () => {
+      const res = await fetch('/api/suppliers');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to load suppliers');
+      }
+      return res.json();
+    }
+  });
+
   // Create item
   const createItem = useMutation({
     mutationFn: async (data: Omit<RequisitionItem, 'id' | 'requisitionId'>) => {
@@ -560,7 +573,19 @@ export default function RequisitionDetailPage() {
             </div>
             <div>
               <label className="text-sm font-medium">Preferred Supplier</label>
-              <Input value={newItem.preferredSupplier} onChange={(e) => setNewItem({ ...newItem, preferredSupplier: e.target.value })} />
+              <Select value={newItem.preferredSupplier || "none"} onValueChange={(value) => setNewItem({ ...newItem, preferredSupplier: value === "none" ? "" : value })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a supplier" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {suppliers.map((supplier: any) => (
+                    <SelectItem key={supplier.id} value={supplier.name}>
+                      {supplier.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowNewItemDialog(false)}>Cancel</Button>
@@ -616,7 +641,19 @@ export default function RequisitionDetailPage() {
                 </div>
                 <div>
                   <label className="text-sm font-medium">Preferred Supplier</label>
-                  <Input value={editingItem.preferredSupplier || ''} onChange={(e) => setEditingItem({ ...editingItem, preferredSupplier: e.target.value })} />
+                  <Select value={editingItem.preferredSupplier || "none"} onValueChange={(value) => setEditingItem({ ...editingItem, preferredSupplier: value === "none" ? "" : value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a supplier" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {suppliers.map((supplier: any) => (
+                        <SelectItem key={supplier.id} value={supplier.name}>
+                          {supplier.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setEditingItem(null)}>Cancel</Button>

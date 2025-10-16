@@ -12,7 +12,6 @@ import {
   validateCreateLpoFromQuotesData,
   validateCreateLpoFromSalesOrdersData,
   validateLpoStatusTransition,
-  validateLpoApprovalStatusTransition,
   validateLpoFinancialData,
   validateLpoItemFinancialData,
   lpoStatusUpdateSchema,
@@ -394,23 +393,6 @@ export function registerSupplierLpoRoutes(app: Express) {
     }
   });
 
-  // Get individual LPO item
-  app.get("/api/supplier-lpos/:id/items/:itemId", async (req, res) => {
-    try {
-      const { itemId } = req.params;
-      const item = await storage.getSupplierLpoItem(itemId);
-      
-      if (!item) {
-        return res.status(404).json({ message: "LPO item not found" });
-      }
-      
-      res.json(item);
-    } catch (error) {
-      console.error("Error fetching LPO item:", error);
-      res.status(500).json({ message: "Failed to fetch LPO item" });
-    }
-  });
-
   // Update LPO item discount and VAT data
   app.patch("/api/supplier-lpos/:id/items/:itemId", async (req, res) => {
     try {
@@ -431,11 +413,35 @@ export function registerSupplierLpoRoutes(app: Express) {
       // Update the LPO item
       const updatedItem = await storage.updateSupplierLpoItem(itemId, updateData);
       
-      console.log(`[LPO-ITEM-UPDATE] Successfully updated item ${itemId}`);
+      // Update LPO tax amount based on all items
+      await (storage as any).updateLpoTaxAmountFromItems(id);
+      
+      console.log(`[LPO-ITEM-UPDATE] Successfully updated item ${itemId} and LPO totals`);
       res.json(updatedItem);
     } catch (error) {
       console.error("Error updating LPO item:", error);
       res.status(500).json({ message: "Failed to update LPO item" });
+    }
+  });
+
+  // Update LPO tax amount from items
+  app.post("/api/supplier-lpos/:id/update-tax-amount", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      console.log(`[LPO-TAX-UPDATE] Updating tax amount for LPO ${id}`);
+      
+      const updatedLpo = await (storage as any).updateLpoTaxAmountFromItems(id);
+      
+      if (!updatedLpo) {
+        return res.status(404).json({ message: "Supplier LPO not found" });
+      }
+      
+      console.log(`[LPO-TAX-UPDATE] Successfully updated LPO ${id} tax amount`);
+      res.json(updatedLpo);
+    } catch (error) {
+      console.error("Error updating LPO tax amount:", error);
+      res.status(500).json({ message: "Failed to update LPO tax amount" });
     }
   });
 
@@ -666,11 +672,14 @@ export function registerSupplierLpoRoutes(app: Express) {
         const total = parseFinancialValue(lpo.totalAmount, subtotal + taxAmount);
         const currency = (lpo.currency && typeof lpo.currency === 'string') ? lpo.currency : 'BHD';
         
-        // Calculate total discount from items
-        const totalDiscountAmount = items.reduce((sum, it) => {
+        // Calculate total discount and VAT from items
+        let totalDiscountAmount = 0;
+        let totalVatAmount = 0;
+        
+        items.forEach((it) => {
           try {
             if (!it || typeof it !== 'object') {
-              return sum;
+              return;
             }
             
             const qty = parseFinancialValue(it.quantity, 0);
@@ -679,16 +688,27 @@ export function registerSupplierLpoRoutes(app: Express) {
             const discountPercent = parseFinancialValue(it.discountPercent, 0);
             const discountAmount = parseFinancialValue(it.discountAmount, 0);
             const calculatedDiscountAmount = discountAmount > 0 ? discountAmount : (grossAmount * discountPercent / 100);
-            return sum + calculatedDiscountAmount;
+            totalDiscountAmount += calculatedDiscountAmount;
+            
+            // Calculate VAT for this item
+            const itemVatPercent = parseFinancialValue(it.vatPercent, 0);
+            const itemVatAmount = parseFinancialValue(it.vatAmount, 0);
+            const lineNet = grossAmount - calculatedDiscountAmount;
+            
+            // Use stored VAT amount if available, otherwise calculate from percentage
+            const calculatedVatAmount = itemVatAmount > 0 ? itemVatAmount : (lineNet * itemVatPercent / 100);
+            totalVatAmount += calculatedVatAmount;
           } catch (error) {
-            return sum;
+            console.warn(`[LPO-PDF] Error processing item for totals:`, error);
           }
-        }, 0);
+        });
         
         const netAmount = subtotal - totalDiscountAmount;
-        // VAT is calculated at LPO level, not item level
-        const vatPercent = netAmount > 0 ? ((taxAmount / netAmount) * 100) : 0;
-        const amountWords = `${currency} ${numberToWords(Math.floor(total))} ONLY`;
+        // Use calculated VAT amount from items if LPO tax_amount is 0 or not set
+        const finalVatAmount = taxAmount > 0 ? taxAmount : totalVatAmount;
+        const vatPercent = netAmount > 0 ? ((finalVatAmount / netAmount) * 100) : 0;
+        const finalTotal = netAmount + finalVatAmount;
+        const amountWords = `${currency} ${numberToWords(Math.floor(finalTotal))} ONLY`;
 
         // Create PDF document
         const doc = new jsPDF('p', 'pt', 'a4');
@@ -790,9 +810,11 @@ export function registerSupplierLpoRoutes(app: Express) {
             const calculatedDiscountAmount = discountAmount > 0 ? discountAmount : (grossAmount * discountPercent / 100);
             const lineNet = grossAmount - calculatedDiscountAmount;
             
-            // For VAT, calculate proportional amount based on item's net total vs total net amount
-            const itemVatAmount = netAmount > 0 ? (lineNet / netAmount) * taxAmount : 0;
-            const itemVatPercent = lineNet > 0 ? ((itemVatAmount / lineNet) * 100) : 0;
+            // For VAT, use actual VAT data from the item if available, otherwise calculate proportionally
+            const itemVatPercent = parseFinancialValue(it.vatPercent, 0);
+            const itemVatAmount = parseFinancialValue(it.vatAmount, 0);
+            const calculatedVatAmount = itemVatAmount > 0 ? itemVatAmount : (lineNet * itemVatPercent / 100);
+            const calculatedVatPercent = lineNet > 0 ? ((calculatedVatAmount / lineNet) * 100) : itemVatPercent;
             
             return [
               idx + 1,
@@ -802,8 +824,8 @@ export function registerSupplierLpoRoutes(app: Express) {
               `${discountPercent.toFixed(0)}%`,
               `${currency} ${calculatedDiscountAmount.toFixed(3)}`,
               `${currency} ${lineNet.toFixed(3)}`,
-              `${itemVatPercent.toFixed(0)}%`,
-              `${currency} ${itemVatAmount.toFixed(3)}`
+              `${calculatedVatPercent.toFixed(0)}%`,
+              `${currency} ${calculatedVatAmount.toFixed(3)}`
             ];
           } catch (error) {
             return [idx + 1, 'Error processing item', '', '', '', '', '', '', ''];
@@ -840,8 +862,8 @@ export function registerSupplierLpoRoutes(app: Express) {
           ['Total Amount', `${currency} ${subtotal.toFixed(3)}`],
           ['Discount Amount', `${currency} ${totalDiscountAmount.toFixed(3)}`],
           ['Net Amount', `${currency} ${netAmount.toFixed(3)}`],
-          ['VAT Amount', `${currency} ${taxAmount.toFixed(3)}`],
-          ['Grand Total', `${currency} ${total.toFixed(3)}`]
+          ['VAT Amount', `${currency} ${finalVatAmount.toFixed(3)}`],
+          ['Grand Total', `${currency} ${(netAmount + finalVatAmount).toFixed(3)}`]
         ];
 
         autoTable(doc, {

@@ -471,18 +471,18 @@ export default function SalesOrderDetail() {
                   <CardTitle>Financial Summary</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-3 gap-6">
-                    <div>
-                      <label className="text-sm font-medium text-gray-500">Subtotal</label>
-                      <p className="text-lg font-semibold">{formatCurrency(Number(salesOrder.subtotal) || 0)}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                      <label className="text-sm font-medium text-gray-600">Subtotal</label>
+                      <p className="text-xl font-bold text-gray-900 mt-2">{formatCurrency(Number(salesOrder.subtotal) || 0)}</p>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-500">Tax Amount</label>
-                      <p className="text-lg font-semibold">{formatCurrency(Number(salesOrder.taxAmount) || 0)}</p>
+                    <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                      <label className="text-sm font-medium text-gray-600">Tax Amount</label>
+                      <p className="text-xl font-bold text-red-600 mt-2">{formatCurrency(Number(salesOrder.taxAmount) || 0)}</p>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-500">Total Amount</label>
-                      <p className="text-2xl font-bold text-blue-600">{formatCurrency(Number(salesOrder.totalAmount) || 0)}</p>
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border-2 border-blue-200 shadow-sm">
+                      <label className="text-sm font-medium text-blue-600">Total Amount</label>
+                      <p className="text-2xl font-bold text-blue-600 mt-2">{formatCurrency(Number(salesOrder.totalAmount) || 0)}</p>
                     </div>
                   </div>
                 </CardContent>

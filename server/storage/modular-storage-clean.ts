@@ -542,6 +542,7 @@ export class ModularStorage extends BaseStorage {
   async updateSupplierLpoItem(id: string, item: any) { return this.supplierLpoStorage.updateSupplierLpoItem(id, item); }
   async deleteSupplierLpoItem(id: string) { return this.supplierLpoStorage.deleteSupplierLpoItem(id); }
   async bulkCreateSupplierLpoItems(items: any[]) { return this.supplierLpoStorage.bulkCreateSupplierLpoItems(items); }
+  async updateLpoTaxAmountFromItems(lpoId: string) { return this.supplierLpoStorage.updateLpoTaxAmountFromItems(lpoId); }
 
   async getPurchaseOrders(quotationId?: string) {
     return this.purchaseOrderStorage.getPurchaseOrders(50, 0, quotationId ? { quotationId } : {});

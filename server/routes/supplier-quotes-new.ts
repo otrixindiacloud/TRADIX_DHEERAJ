@@ -154,11 +154,26 @@ export function registerSupplierQuoteRoutes(app: Express) {
       let totalAmount = 0;
       
       if (data.items && data.items.length > 0) {
+        let totalDiscount = 0;
+        let totalTax = 0;
+        
         for (const item of data.items) {
-          const itemTotal = item.quantity * item.unitPrice;
-          subtotal += itemTotal;
+          const quantity = Number(item.quantity) || 0;
+          const unitPrice = Number(item.unitPrice) || 0;
+          const discountPercent = Number(item.discountPercent) || 0;
+          const taxPercent = Number(item.taxPercent) || 0;
+          const explicitDiscountAmount = Number(item.discountAmount) || 0;
+          
+          const grossAmount = quantity * unitPrice;
+          const discountAmount = explicitDiscountAmount > 0 ? explicitDiscountAmount : (grossAmount * discountPercent / 100);
+          const netAmount = grossAmount - discountAmount;
+          const itemTax = netAmount * taxPercent / 100;
+          
+          subtotal += netAmount;
+          totalDiscount += discountAmount;
+          totalTax += itemTax;
         }
-        totalAmount = subtotal; // Add tax calculation if needed
+        totalAmount = subtotal + totalTax;
       }
       
       const quoteData = {
@@ -387,7 +402,8 @@ export function registerSupplierQuoteRoutes(app: Express) {
       }
 
       // Validate all suppliers exist (simplified validation for now)
-      const supplierIds = suppliers.map(s => s.supplierId);
+      // Handle both string array and object array formats
+      const supplierIds = suppliers.map(s => typeof s === 'string' ? s : s.supplierId);
       console.log('Validating suppliers:', supplierIds);
       
       // For now, just validate that we have supplier IDs
@@ -395,8 +411,8 @@ export function registerSupplierQuoteRoutes(app: Express) {
         return res.status(400).json({ message: "No suppliers provided" });
       }
 
-      // Build supplier names string for notes
-      const supplierNames = suppliers.map(s => s.supplierName).join(', ');
+      // Build supplier names string for notes (if available)
+      const supplierNames = suppliers.map(s => typeof s === 'string' ? s : s.supplierName).join(', ');
 
       // Generate unique quote number
       const baseStorage = new (BaseStorage as any)();
@@ -423,7 +439,8 @@ export function registerSupplierQuoteRoutes(app: Express) {
       
       for (const supplier of suppliers) {
         const supplierQuoteId = randomUUID();
-        const supplierQuoteNumber = `${quoteNumber}-${supplier.supplierId.slice(-4)}`;
+        const supplierId = typeof supplier === 'string' ? supplier : supplier.supplierId;
+        const supplierQuoteNumber = `${quoteNumber}-${supplierId.slice(-4)}`;
         
         // Calculate totals from items
         let subtotal = 0;
@@ -448,7 +465,7 @@ export function registerSupplierQuoteRoutes(app: Express) {
         `, [
           supplierQuoteId,
           supplierQuoteNumber,
-          supplier.supplierId,
+          supplierId,
           'Draft',
           priority || 'Medium',
           new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
@@ -462,7 +479,7 @@ export function registerSupplierQuoteRoutes(app: Express) {
           `Quote request for enquiry ${enquiryData.enquiryNumber} from customer ${enquiryData.customer?.name || 'Unknown'}`,
           paymentTerms || 'Net 30',
           deliveryTerms || 'FOB Destination',
-          SYSTEM_USER_ID
+          SYSTEM_USER_ID // created_by
         ]);
 
         // Create supplier quote items if provided

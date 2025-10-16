@@ -539,7 +539,7 @@ export class InvoiceStorage extends BaseStorage {
       console.log(`[DEBUG] After item ${di.id}: lineNet=${lineNet}, lineGross=${lineGross}, lineDiscount=${lineDiscount}, subtotal now=${subtotal + lineNet}`);
       subtotal += lineNet; // Use net amount after discount for subtotal
 
-      const lineTax = lineNet * 0.10;
+      const lineTax = Math.round((lineNet * 0.10) * 100) / 100;
       taxTotal += lineTax;
           invoiceItemsToInsert.push({
             invoiceId: 'TEMP',
@@ -734,6 +734,7 @@ export class InvoiceStorage extends BaseStorage {
       discountAmount: totalDiscount,
       totalAmount: subtotal + taxTotal,
       paidAmount: 0,
+      remainingAmount: subtotal + taxTotal,
       outstandingAmount: subtotal + taxTotal,
       subtotalBase: subtotal,
       taxAmountBase: taxTotal,
@@ -844,6 +845,7 @@ export class InvoiceStorage extends BaseStorage {
       discountAmount: 0,
       totalAmount: 0,
       paidAmount: 0,
+      remainingAmount: 0,
       outstandingAmount: 0,
       subtotalBase: 0,
       taxAmountBase: 0,
@@ -907,7 +909,7 @@ export class InvoiceStorage extends BaseStorage {
           console.log(`[DEBUG] Using fallback description for proforma: ${description}`);
         }
         
-        const lineTax = Number(soItem.totalPrice || 0) * 0.10;
+        const lineTax = Math.round((Number(soItem.totalPrice || 0) * 0.10) * 100) / 100;
         taxTotal += lineTax;
         return {
           invoiceId: invoice.id,
@@ -951,6 +953,7 @@ export class InvoiceStorage extends BaseStorage {
           subtotal: subtotal.toString(),
           taxAmount: taxTotal.toString(),
           totalAmount: totalAmount.toString(),
+          remainingAmount: totalAmount.toString(),
           outstandingAmount: totalAmount.toString(),
           subtotalBase: subtotal.toString(),
           taxAmountBase: taxTotal.toString(),
@@ -1016,6 +1019,7 @@ export class InvoiceStorage extends BaseStorage {
           .set({
             subtotal: subtotal.toString(),
             totalAmount: totalAmount.toString(),
+            remainingAmount: totalAmount.toString(),
             outstandingAmount: totalAmount.toString(),
             subtotalBase: subtotal.toString(),
             totalAmountBase: totalAmount.toString(),
@@ -1045,7 +1049,12 @@ export class InvoiceStorage extends BaseStorage {
     const newPaid = num(inv.paidAmount) + paidAmount;
     const outstanding = Math.max(0, num(inv.totalAmount) - newPaid);
     const status = outstanding === 0 ? 'Paid' : inv.status;
-    return this.updateInvoice(invoiceId, { paidAmount: newPaid as any, outstandingAmount: outstanding as any, status } as any);
+    return this.updateInvoice(invoiceId, { 
+      paidAmount: newPaid as any, 
+      remainingAmount: outstanding as any,
+      outstandingAmount: outstanding as any, 
+      status 
+    } as any);
   }
 
   // Items

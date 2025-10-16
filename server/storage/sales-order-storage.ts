@@ -15,20 +15,35 @@ export class SalesOrderStorage extends BaseStorage implements ISalesOrderStorage
       .where(eq(salesOrderItems.salesOrderId, salesOrderId));
     
     let subtotal = 0;
+    let totalDiscount = 0;
+    let totalTax = 0;
+    
     for (const item of items) {
       const quantity = Number(item.quantity) || 0;
       const unitPrice = Number(item.unitPrice) || 0;
-      subtotal += quantity * unitPrice;
+      const discountPercent = Number((item as any).discountPercent) || 0;
+      const taxPercent = Number((item as any).taxPercent) || 10; // Default to 10% VAT
+      const explicitDiscountAmount = Number((item as any).discountAmount) || 0;
+      
+      // Use proper calculation with rounding
+      const grossAmount = Math.round((quantity * unitPrice) * 100) / 100;
+      const discountAmount = explicitDiscountAmount > 0 
+        ? Math.min(explicitDiscountAmount, grossAmount * 0.999) // Cap at 99.9%
+        : Math.round((grossAmount * discountPercent / 100) * 100) / 100;
+      const netAmount = Math.max(0.01, Math.round((grossAmount - discountAmount) * 100) / 100);
+      const taxAmount = Math.round((netAmount * taxPercent / 100) * 100) / 100;
+      
+      subtotal += netAmount;
+      totalDiscount += discountAmount;
+      totalTax += taxAmount;
     }
     
-    // For now, no tax calculation - can be enhanced later
-    const taxAmount = 0;
-    const totalAmount = subtotal + taxAmount;
+    const totalAmount = subtotal + totalTax;
     
     return {
-      subtotal: subtotal.toFixed(3),
-      taxAmount: taxAmount.toFixed(3),
-      totalAmount: totalAmount.toFixed(3)
+      subtotal: (Math.round(subtotal * 100) / 100).toFixed(3),
+      taxAmount: (Math.round(totalTax * 100) / 100).toFixed(3),
+      totalAmount: (Math.round(totalAmount * 100) / 100).toFixed(3)
     };
   }
 
@@ -120,12 +135,26 @@ export class SalesOrderStorage extends BaseStorage implements ISalesOrderStorage
     // If financial totals are not provided, calculate from items if available
     if (!salesOrder.subtotal && !salesOrder.taxAmount && !salesOrder.totalAmount && salesOrder.items) {
       subtotal = 0;
+      let calculatedTax = 0;
       for (const item of salesOrder.items) {
         const qty = Number(item.quantity) || 0;
         const unit = Number(item.unitPrice) || 0;
-        subtotal += qty * unit;
+        const discountPercent = Number(item.discountPercent) || 0;
+        const taxPercent = Number(item.taxPercent) || 10; // Default to 10% VAT
+        const explicitDiscountAmount = Number(item.discountAmount) || 0;
+        
+        // Use proper calculation with rounding
+        const grossAmount = Math.round((qty * unit) * 100) / 100;
+        const discountAmount = explicitDiscountAmount > 0 
+          ? Math.min(explicitDiscountAmount, grossAmount * 0.999) // Cap at 99.9%
+          : Math.round((grossAmount * discountPercent / 100) * 100) / 100;
+        const netAmount = Math.max(0.01, Math.round((grossAmount - discountAmount) * 100) / 100);
+        const itemTax = Math.round((netAmount * taxPercent / 100) * 100) / 100;
+        
+        subtotal += netAmount;
+        calculatedTax += itemTax;
       }
-      taxAmount = 0; // For now, no tax calculation
+      taxAmount = calculatedTax;
       totalAmount = subtotal + taxAmount;
     }
     
@@ -226,10 +255,18 @@ export class SalesOrderStorage extends BaseStorage implements ISalesOrderStorage
       for (const qi of quotationItemsData) {
         const qty = Number(qi.quantity) || 0;
         const unit = Number(qi.unitPrice) || 0;
-        subtotal += qty * unit;
+        const discountPercent = Number((qi as any).discountPercent) || 0;
+        const taxPercent = Number((qi as any).taxPercent) || 10; // Default to 10% VAT
+        const explicitDiscountAmount = Number((qi as any).discountAmount) || 0;
+        
+        const grossAmount = qty * unit;
+        const discountAmount = explicitDiscountAmount > 0 ? explicitDiscountAmount : (grossAmount * discountPercent / 100);
+        const netAmount = grossAmount - discountAmount;
+        const itemTax = netAmount * taxPercent / 100;
+        
+        subtotal += netAmount;
+        taxAmount += itemTax;
       }
-      // For now, no tax calculation - can be enhanced later
-      taxAmount = 0;
       totalAmount = subtotal + taxAmount;
     }
 

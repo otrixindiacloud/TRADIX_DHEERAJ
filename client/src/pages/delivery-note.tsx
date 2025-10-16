@@ -100,16 +100,31 @@ export default function DeliveryNote() {
   const [showPickingDialog, setShowPickingDialog] = useState(false);
   const [showConfirmDeliveryDialog, setShowConfirmDeliveryDialog] = useState(false);
   const [showStatusChangeDialog, setShowStatusChangeDialog] = useState(false);
-  const [enquiryItems, setEnquiryItems] = useState<any[]>([]);
-  const [enquiryItemsLoading, setEnquiryItemsLoading] = useState(false);
+  const [deliveryItems, setDeliveryItems] = useState<any[]>([]);
+  const [deliveryItemsLoading, setDeliveryItemsLoading] = useState(false);
   const [isEditingItems, setIsEditingItems] = useState(false);
   const [editedDeliveryQtyByItem, setEditedDeliveryQtyByItem] = useState<Record<string, number>>({});
   const [isSavingItemChanges, setIsSavingItemChanges] = useState(false);
+  // Function to refresh selected delivery note data
+  const refreshSelectedDeliveryNote = async (deliveryId: string) => {
+    try {
+      const response = await fetch(`/api/delivery-notes/${deliveryId}`);
+      if (response.ok) {
+        const updatedDelivery = await response.json();
+        setSelectedDeliveryNote(updatedDelivery);
+        return updatedDelivery;
+      }
+    } catch (error) {
+      console.error('Error refreshing delivery note:', error);
+    }
+    return null;
+  };
+
   // Fetch DELIVERY ITEMS when details dialog opens and selectedDeliveryNote changes
   useEffect(() => {
     const fetchDeliveryItems = async () => {
-      setEnquiryItems([]);
-      setEnquiryItemsLoading(true);
+      setDeliveryItems([]);
+      setDeliveryItemsLoading(true);
       try {
         if (selectedDeliveryNote?.id) {
           console.log('Fetching delivery items for delivery ID:', selectedDeliveryNote.id);
@@ -118,7 +133,7 @@ export default function DeliveryNote() {
             const data = await response.json();
             console.log('Delivery items fetched:', data);
             console.log('Number of items:', data.length);
-            setEnquiryItems(data);
+            setDeliveryItems(data);
             const init: Record<string, number> = {};
             for (const it of data) init[it.id] = Number(it.deliveredQuantity || it.pickedQuantity || it.orderedQuantity || 0);
             setEditedDeliveryQtyByItem(init);
@@ -129,12 +144,12 @@ export default function DeliveryNote() {
       } catch (err) {
         console.error('Error fetching delivery items:', err);
       }
-      setEnquiryItemsLoading(false);
+      setDeliveryItemsLoading(false);
     };
     if (showDetailsDialog && selectedDeliveryNote?.id) {
       fetchDeliveryItems();
     } else {
-      setEnquiryItems([]);
+      setDeliveryItems([]);
     }
   }, [showDetailsDialog, selectedDeliveryNote]);
   const [selectedSalesOrderId, setSelectedSalesOrderId] = useState("");
@@ -568,12 +583,20 @@ export default function DeliveryNote() {
       return await apiRequest("POST", "/api/delivery-notes", data);
     },
     onSuccess: () => {
+      // Invalidate and refetch all delivery-related queries
       queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+      queryClient.invalidateQueries({ queryKey: ["deliveries"] });
+      queryClient.invalidateQueries({ queryKey: ["sales-orders-list"] });
+      
+      // Reset pagination and filters
       setCurrentPage(1);
-  setDeliverySearchTerm("");
+      setDeliverySearchTerm("");
       setStatusFilter("all");
       setCustomerFilter("");
+      
+      // Refetch the main data
       refetch();
+      
       toast({
         title: "Success",
         description: "Delivery note created successfully"
@@ -595,21 +618,36 @@ export default function DeliveryNote() {
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
       return await apiRequest("PATCH", `/api/delivery-notes/${id}`, data);
     },
-    onSuccess: () => {
+    onSuccess: (updatedDelivery) => {
+      // Invalidate and refetch all delivery-related queries
       queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+      queryClient.invalidateQueries({ queryKey: ["deliveries"] });
+      
+      // Update the selected delivery note if it's the one being updated
+      if (selectedDeliveryNote && selectedDeliveryNote.id === updatedDelivery.id) {
+        setSelectedDeliveryNote(updatedDelivery);
+      }
+      
+      // Reset pagination and filters
       setCurrentPage(1);
-  setDeliverySearchTerm("");
+      setDeliverySearchTerm("");
       setStatusFilter("all");
       setCustomerFilter("");
+      
+      // Refetch the main data
       refetch();
+      
       toast({
         title: "Success",
         description: "Delivery note updated successfully"
       });
+      
+      // Close all dialogs
       setShowPickingDialog(false);
       setShowConfirmDeliveryDialog(false);
       setShowEditDialog(false);
       setShowStatusChangeDialog(false);
+      setShowDetailsDialog(false);
       resetForm();
     },
     onError: (error: any) => {
@@ -627,8 +665,19 @@ export default function DeliveryNote() {
       return await apiRequest("DELETE", `/api/delivery-notes/${id}`);
     },
     onSuccess: () => {
+      // Invalidate and refetch all delivery-related queries
       queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+      queryClient.invalidateQueries({ queryKey: ["deliveries"] });
+      
+      // Reset pagination and filters
+      setCurrentPage(1);
+      setDeliverySearchTerm("");
+      setStatusFilter("all");
+      setCustomerFilter("");
+      
+      // Refetch the main data
       refetch();
+      
       toast({
         title: "Success",
         description: "Delivery note deleted successfully"
@@ -794,7 +843,7 @@ export default function DeliveryNote() {
     });
   };
 
-  const handleConfirmDelivery = () => {
+  const handleConfirmDelivery = async () => {
     if (!selectedDeliveryNote) return;
     
     const updateData = {
@@ -803,13 +852,47 @@ export default function DeliveryNote() {
       actualDeliveryDate: new Date().toISOString(),
       status: "Complete"
     };
-    updateDeliveryStatusMutation.mutate({
-      id: selectedDeliveryNote.id,
-      data: updateData
-    });
+    
+    try {
+      const response = await fetch(`/api/delivery-notes/${selectedDeliveryNote.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateData)
+      });
+      
+      if (response.ok) {
+        const updatedDelivery = await response.json();
+        
+        // Update the selected delivery note immediately
+        setSelectedDeliveryNote(updatedDelivery);
+        
+        // Invalidate queries to refresh the list
+        queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+        queryClient.invalidateQueries({ queryKey: ["deliveries"] });
+        refetch();
+        
+        toast({
+          title: "Success",
+          description: "Delivery confirmed successfully"
+        });
+        
+        setShowConfirmDeliveryDialog(false);
+        resetForm();
+      } else {
+        throw new Error('Failed to confirm delivery');
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to confirm delivery",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleStatusChange = () => {
+  const handleStatusChange = async () => {
     if (!selectedDeliveryNote) return;
     
     const updateData: any = {
@@ -846,22 +929,55 @@ export default function DeliveryNote() {
       updateData.deliveryNotes = `${selectedDeliveryNote.deliveryNotes || ''}\n[Status changed to ${newStatus}: ${statusChangeReason}]`.trim();
     }
 
-    updateDeliveryStatusMutation.mutate({
-      id: selectedDeliveryNote.id,
-      data: updateData
-    });
+    try {
+      const response = await fetch(`/api/delivery-notes/${selectedDeliveryNote.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateData)
+      });
+      
+      if (response.ok) {
+        const updatedDelivery = await response.json();
+        
+        // Update the selected delivery note immediately
+        setSelectedDeliveryNote(updatedDelivery);
+        
+        // Invalidate queries to refresh the list
+        queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+        queryClient.invalidateQueries({ queryKey: ["deliveries"] });
+        refetch();
+        
+        toast({
+          title: "Success",
+          description: "Delivery status updated successfully"
+        });
+        
+        setShowStatusChangeDialog(false);
+        resetForm();
+      } else {
+        throw new Error('Failed to update delivery status');
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update delivery status",
+        variant: "destructive"
+      });
+    }
   };
 
   // Function to fetch delivery items for editing
   const fetchDeliveryItemsForEdit = async () => {
     if (!selectedDeliveryNote?.id) return;
     
-    setEnquiryItemsLoading(true);
+    setDeliveryItemsLoading(true);
     try {
       const response = await fetch(`/api/deliveries/${selectedDeliveryNote.id}/items`);
       if (response.ok) {
         const data = await response.json();
-        setEnquiryItems(data);
+        setDeliveryItems(data);
         const init: Record<string, number> = {};
         for (const it of data) {
           init[it.id] = Number(it.deliveredQuantity || it.pickedQuantity || it.orderedQuantity || 0);
@@ -875,7 +991,7 @@ export default function DeliveryNote() {
         variant: "destructive"
       });
     }
-    setEnquiryItemsLoading(false);
+    setDeliveryItemsLoading(false);
   };
 
   // Function to save item changes
@@ -899,15 +1015,22 @@ export default function DeliveryNote() {
       });
 
       if (response.ok) {
+        // Refresh the selected delivery note
+        await refreshSelectedDeliveryNote(selectedDeliveryNote.id);
+        
+        // Refresh the delivery items
+        await fetchDeliveryItemsForEdit();
+        
+        // Invalidate queries to refresh the list
+        queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+        queryClient.invalidateQueries({ queryKey: ["deliveries"] });
+        refetch();
+        
         toast({
           title: "Success",
           description: "Delivery item quantities updated successfully"
         });
         setIsEditingItems(false);
-        // Refresh the delivery items
-        await fetchDeliveryItemsForEdit();
-        // Refresh the main delivery notes list
-        queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
       } else {
         throw new Error('Failed to update delivery items');
       }
@@ -922,7 +1045,7 @@ export default function DeliveryNote() {
   };
 
   // Print handler for delivery note
-  // Print handler for delivery note using enquiryItems
+  // Print handler for delivery note using deliveryItems
   // ...existing code...
 
   const columns: Column<DeliveryNote>[] = [
@@ -1187,6 +1310,18 @@ export default function DeliveryNote() {
             </div>
           </div>
           <div className="flex gap-2">
+            <Button 
+              onClick={() => {
+                queryClient.invalidateQueries({ queryKey: ["delivery-notes"] });
+                queryClient.invalidateQueries({ queryKey: ["deliveries"] });
+                refetch();
+              }}
+              variant="outline"
+              className="font-semibold px-6 py-2 flex items-center gap-2"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
             <Button 
               onClick={() => setShowCreateDialog(true)}
               variant="outline"
@@ -1488,10 +1623,27 @@ export default function DeliveryNote() {
       <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
         <DialogContent className="max-w-5xl max-h-[75vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-lg">Delivery Note Details</DialogTitle>
-            <DialogDescription>
-              {selectedDeliveryNote?.deliveryNumber}
-            </DialogDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-lg">Delivery Note Details</DialogTitle>
+                <DialogDescription>
+                  {selectedDeliveryNote?.deliveryNumber}
+                </DialogDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (selectedDeliveryNote?.id) {
+                    refreshSelectedDeliveryNote(selectedDeliveryNote.id);
+                  }
+                }}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </Button>
+            </div>
           </DialogHeader>
           {selectedDeliveryNote && (
             <div className="space-y-6 text-sm">
@@ -1521,11 +1673,11 @@ export default function DeliveryNote() {
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-semibold text-base">Delivery Items</h3>
               </div>
-                {enquiryItemsLoading ? (
+                {deliveryItemsLoading ? (
                   <div className="text-sm text-gray-500">Loading items...</div>
-                ) : enquiryItems.length > 0 ? (
+                ) : deliveryItems.length > 0 ? (
                   <div className="space-y-2">
-                {enquiryItems.map((item, idx) => (
+                {deliveryItems.map((item, idx) => (
                   <div key={item.id || idx} className="flex justify-between items-center bg-gray-50 rounded p-2">
                     <span className="font-medium truncate">{item.description}</span>
                     {isEditingItems ? (
@@ -1549,7 +1701,7 @@ export default function DeliveryNote() {
                 ))}
                   </div>
                 ) : (
-                  <div className="text-sm text-gray-400">No items found for this enquiry.</div>
+                  <div className="text-sm text-gray-400">No items found for this delivery.</div>
                 )}
               </div>
               {selectedDeliveryNote.deliveryAddress && (
@@ -1656,16 +1808,34 @@ export default function DeliveryNote() {
         if (!open) {
           // Reset editing state when dialog closes
           setIsEditingItems(false);
-          setEnquiryItems([]);
+          setDeliveryItems([]);
           setEditedDeliveryQtyByItem({});
         }
       }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Delivery Note</DialogTitle>
-            <DialogDescription>
-              {selectedDeliveryNote?.deliveryNumber} - Items are automatically loaded for editing
-            </DialogDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle>Edit Delivery Note</DialogTitle>
+                <DialogDescription>
+                  {selectedDeliveryNote?.deliveryNumber} - Items are automatically loaded for editing
+                </DialogDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (selectedDeliveryNote?.id) {
+                    refreshSelectedDeliveryNote(selectedDeliveryNote.id);
+                    fetchDeliveryItemsForEdit();
+                  }
+                }}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </Button>
+            </div>
           </DialogHeader>
           {selectedDeliveryNote && (
             <div className="space-y-6">
@@ -1737,13 +1907,13 @@ export default function DeliveryNote() {
                   )}
                 </div>
 
-                {enquiryItemsLoading ? (
+                {deliveryItemsLoading ? (
                   <div className="flex justify-center py-8">
                     <LoadingSpinner />
                   </div>
-                ) : enquiryItems.length > 0 ? (
+                ) : deliveryItems.length > 0 ? (
                   <div className="space-y-3">
-                    {enquiryItems.map((item, index) => (
+                    {deliveryItems.map((item, index) => (
                       <div key={item.id} className="border rounded-lg p-4 bg-gray-50">
                         <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-center">
                           <div className="md:col-span-2">
@@ -1846,7 +2016,7 @@ export default function DeliveryNote() {
                 setShowEditDialog(false);
                 setIsEditingItems(false);
                 setEditedDeliveryQtyByItem({});
-                setEnquiryItems([]);
+                setDeliveryItems([]);
               }}
             >
               Cancel
@@ -1856,7 +2026,7 @@ export default function DeliveryNote() {
                 if (!selectedDeliveryNote) return;
                 
                 // First save item changes if in editing mode
-                if (isEditingItems && enquiryItems.length > 0) {
+                if (isEditingItems && deliveryItems.length > 0) {
                   try {
                     setIsSavingItemChanges(true);
                     const itemUpdates = Object.entries(editedDeliveryQtyByItem).map(([itemId, quantity]) => ({
@@ -1903,7 +2073,7 @@ export default function DeliveryNote() {
                 setShowEditDialog(false);
                 setIsEditingItems(false);
                 setEditedDeliveryQtyByItem({});
-                setEnquiryItems([]);
+                setDeliveryItems([]);
               }}
               disabled={updateDeliveryStatusMutation.isPending || isSavingItemChanges}
             >
@@ -1978,10 +2148,27 @@ export default function DeliveryNote() {
       <Dialog open={showStatusChangeDialog} onOpenChange={setShowStatusChangeDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Change Delivery Status</DialogTitle>
-            <DialogDescription>
-              Update the status for delivery {selectedDeliveryNote?.deliveryNumber}
-            </DialogDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle>Change Delivery Status</DialogTitle>
+                <DialogDescription>
+                  Update the status for delivery {selectedDeliveryNote?.deliveryNumber}
+                </DialogDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (selectedDeliveryNote?.id) {
+                    refreshSelectedDeliveryNote(selectedDeliveryNote.id);
+                  }
+                }}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </Button>
+            </div>
           </DialogHeader>
           
           <div className="space-y-4">

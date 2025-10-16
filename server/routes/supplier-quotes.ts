@@ -94,6 +94,43 @@ export function registerSupplierQuoteRoutes(app: Express) {
     }
   });
 
+  // Create supplier quote item
+  app.post("/api/supplier-quotes/:id/items", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const itemData = { ...req.body, supplierQuoteId: id };
+      const item = await SupplierQuoteStorage.createItem(itemData);
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Error creating supplier quote item:", error);
+      res.status(500).json({ message: "Failed to create supplier quote item" });
+    }
+  });
+
+  // Update supplier quote item
+  app.put("/api/supplier-quotes/items/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const item = await SupplierQuoteStorage.updateItem(id, req.body);
+      res.json(item);
+    } catch (error) {
+      console.error("Error updating supplier quote item:", error);
+      res.status(500).json({ message: "Failed to update supplier quote item" });
+    }
+  });
+
+  // Delete supplier quote item
+  app.delete("/api/supplier-quotes/items/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      await SupplierQuoteStorage.deleteItem(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting supplier quote item:", error);
+      res.status(500).json({ message: "Failed to delete supplier quote item" });
+    }
+  });
+
   // Create new supplier quote
   app.post("/api/supplier-quotes", async (req: Request, res: Response) => {
     try {

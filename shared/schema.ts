@@ -551,7 +551,6 @@ export const supplierLpos = pgTable("supplier_lpos", {
   amendmentType: varchar("amendment_type", { length: 50 }), // "Quantity", "Price", "Delivery", "Terms", "Cancellation"
   // Approval workflow
   requiresApproval: boolean("requires_approval").default(false),
-  approvalStatus: varchar("approval_status", { length: 50 }).default("Not Required"), // "Not Required", "Pending", "Approved", "Rejected"
   approvedBy: uuid("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   approvalNotes: text("approval_notes"),
@@ -1396,7 +1395,7 @@ import {
   type InsertInventoryVariant,
   type InsertInventoryLevel,
   type InsertStockMovement
-} from './schemas/inventory.js';
+} from './schemas/inventory';
 
 // Re-export inventory tables
 export { 
@@ -1436,7 +1435,7 @@ import {
   type InsertScannedItem,
   type InsertSupplierReturn,
   type InsertSupplierReturnItem
-} from './schemas/scanning-returns.js';
+} from './schemas/scanning-returns';
 
 // Goods Receipt Management
 // UPDATED: goods receipt IDs migrated from nanoid(text) to uuid for consistency.
@@ -2253,6 +2252,7 @@ export const supplierQuotes = pgTable("supplier_quotes", {
   supersededBy: uuid("superseded_by").references(() => users.id),
   isSuperseded: boolean("is_superseded").default(false),
   enquiryId: uuid("enquiry_id").references(() => enquiries.id),
+  requisitionId: uuid("requisition_id").references(() => requisitions.id),
   supplierId: uuid("supplier_id").references(() => suppliers.id).notNull(),
   status: quotationStatusEnum("status").default("Draft"),
   priority: varchar("priority", { length: 20 }).default("Medium"), // "Low", "Medium", "High", "Urgent"
@@ -2291,6 +2291,12 @@ export const supplierQuoteItems = pgTable("supplier_quote_items", {
   unitOfMeasure: varchar("unit_of_measure", { length: 50 }),
   unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
   lineTotal: decimal("line_total", { precision: 12, scale: 2 }).notNull(),
+  // Discount fields
+  discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }).default("0"),
+  discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }).default("0"),
+  // VAT fields
+  vatPercent: decimal("vat_percent", { precision: 5, scale: 2 }).default("0"),
+  vatAmount: decimal("vat_amount", { precision: 10, scale: 2 }).default("0"),
   specification: text("specification"),
   brand: varchar("brand", { length: 100 }),
   model: varchar("model", { length: 100 }),

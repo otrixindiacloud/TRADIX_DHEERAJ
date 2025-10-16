@@ -708,7 +708,7 @@ export default function SupplierQuotesPage() {
   const columns = [
     {
       key: "select",
-      header: "",
+      header: "", // No select all checkbox - individual selection only
       render: (_: any, quote: SupplierQuote) => (
         <input
           type="checkbox"
@@ -833,26 +833,34 @@ export default function SupplierQuotesPage() {
       },
     },
     {
+      key: "requisitionNumber",
+      header: "Requisition",
+      render: (_: string, quote: any) => {
+        if (quote.requisitionId) {
+          return (
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-green-500" />
+              <span className="font-medium text-green-600">
+                REQ-{quote.requisitionId.slice(-8).toUpperCase()}
+              </span>
+            </div>
+          );
+        }
+        
+        return (
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-gray-400" />
+            <span className="text-gray-400 italic">No Requisition</span>
+          </div>
+        );
+      },
+    },
+    {
       key: "status",
       header: "Status",
       render: (value: string, quote: SupplierQuote) => (
         <div className="flex items-center gap-2">
           <StatusPill status={value} />
-          <Select
-            value={value}
-            onValueChange={(newStatus) => handleQuickStatusUpdate(quote.id, newStatus)}
-          >
-            <SelectTrigger className="w-32 h-6 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Draft">Draft</SelectItem>
-              <SelectItem value="Sent">Sent</SelectItem>
-              <SelectItem value="Accepted">Accepted</SelectItem>
-              <SelectItem value="Rejected">Rejected</SelectItem>
-              <SelectItem value="Expired">Expired</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       ),
     },
@@ -1663,7 +1671,7 @@ export default function SupplierQuotesPage() {
                     });
                   }
                 }}
-                disabled={updateSupplierQuote.isPending || !editQuote.supplierId || !editQuote.validUntil || suppliersLoading}
+                disabled={updateSupplierQuote.isPending || !editQuote.supplierId?.trim() || !editQuote.validUntil?.trim() || suppliersLoading}
               >
                 {updateSupplierQuote.isPending ? "Updating..." : "Update Quote"}
               </Button>

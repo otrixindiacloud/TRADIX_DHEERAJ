@@ -12,8 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast, useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { CalendarIcon, Package, Truck, FileText, Plus, Search, Filter, RefreshCw, CheckCircle, XCircle, Clock, Send, Eye, DollarSign, Building2, Download } from "lucide-react";
-import { Pencil } from "lucide-react";
+import { CalendarIcon, Package, Truck, FileText, Plus, Search, Filter, RefreshCw, CheckCircle, XCircle, Clock, Send, Eye, DollarSign, Building2, Download, Pencil, Trash2, Printer } from "lucide-react";
   // Remove this block from the top-level scope and place it inside SupplierLpoPage after:
   //   const [editLpo, setEditLpo] = useState<SupplierLpo | null>(null);
   // (Moved below inside SupplierLpoPage)
@@ -22,6 +21,7 @@ import { Pencil } from "lucide-react";
   
   // (No code here; move the block below inside SupplierLpoPage)
 import { format } from "date-fns";
+import { formatCurrency } from "@/lib/utils";
 import type { SupplierLpo, SupplierLpoItem, Supplier } from "@shared/schema";
 import EditLpoDialog from "./EditLpoDialog";
 
@@ -42,12 +42,6 @@ const statusColors = {
   Missing: "flex items-center gap-2 text-red-700 bg-red-100 border border-red-300 px-4 h-8 min-w-[100px] justify-center font-medium text-base",
 };
 
-const approvalStatusColors = {
-  "Not Required": "text-white bg-blue-500 border border-blue-500 font-semibold px-4 py-1 rounded-full",
-  Pending: "text-yellow-700 bg-yellow-100 border border-yellow-300",
-  Approved: "text-green-700 bg-green-100 border border-green-300",
-  Rejected: "text-red-700 bg-red-100 border border-red-300",
-};
 
 // (Remove this duplicate/incomplete SupplierLpoPage function definition)
 export default function SupplierLpoPage() {
@@ -617,21 +611,6 @@ export default function SupplierLpoPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-medium flex items-center gap-2">
-              <Clock className="h-6 w-6 text-yellow-600" />
-              <span className="font-bold text-lg">Pending Approval</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <div className="text-2xl font-bold text-yellow-600">
-                {Array.isArray(supplierLpos) ? supplierLpos.filter((lpo: SupplierLpo) => lpo.approvalStatus === "Pending").length : 0}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
               <Send className="h-6 w-6 text-gray-600" />
               <span className="font-bold text-lg">Sent to Suppliers</span>
             </CardTitle>
@@ -997,7 +976,6 @@ export default function SupplierLpoPage() {
                     <TableHead className="border-r border-gray-200 text-left font-semibold text-gray-700 px-4 py-3">LPO Number</TableHead>
                     <TableHead className="border-r border-gray-200 text-left font-semibold text-gray-700 px-4 py-3">Supplier Name</TableHead>
                     <TableHead className="border-r border-gray-200 text-center font-semibold text-gray-700 px-4 py-3">Status</TableHead>
-                    <TableHead className="border-r border-gray-200 text-center font-semibold text-gray-700 px-4 py-3">Approval Status</TableHead>
                     <TableHead className="border-r border-gray-200 text-center font-semibold text-gray-700 px-4 py-3">LPO Date</TableHead>
                     <TableHead className="border-r border-gray-200 text-center font-semibold text-gray-700 px-4 py-3">Expected Delivery</TableHead>
                     <TableHead className="text-center font-semibold text-gray-700 px-4 py-3">Actions</TableHead>
@@ -1039,15 +1017,6 @@ export default function SupplierLpoPage() {
                         {renderStatusChip(lpo.status || undefined)}
                       </TableCell>
                       <TableCell className="border-r border-gray-200 px-4 py-3 text-center">
-                        <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${approvalStatusColors[lpo.approvalStatus as keyof typeof approvalStatusColors] || "bg-gray-100 text-gray-700 border border-gray-300"}`}>
-                          {lpo.approvalStatus === "Approved" && <CheckCircle className="w-4 h-4 text-green-600" />}
-                          {lpo.approvalStatus === "Pending" && <Clock className="w-4 h-4 text-yellow-600" />}
-                          {lpo.approvalStatus === "Rejected" && <XCircle className="w-4 h-4 text-red-600" />}
-                          {lpo.approvalStatus === "Not Required" && <FileText className="w-4 h-4 text-blue-600" />}
-                          <span>{lpo.approvalStatus || "Not Required"}</span>
-                        </span>
-                      </TableCell>
-                      <TableCell className="border-r border-gray-200 px-4 py-3 text-center">
                         <div className="text-sm">
                           {lpo.lpoDate ? format(new Date(lpo.lpoDate), "MMM dd, yyyy") : "-"}
                         </div>
@@ -1074,72 +1043,82 @@ export default function SupplierLpoPage() {
                         )}
                       </TableCell>
                       <TableCell className="px-4 py-3 text-center">
-                        <div className="flex gap-2 justify-center">
+                        <div className="flex gap-3 justify-center">
+                          {/* View Button - Simple icon */}
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="ghost"
                             onClick={e => {
                               e.stopPropagation();
                               setSelectedLpo(lpo);
                             }}
                             data-testid={`button-view-${lpo.id}`}
-                            className="h-8 w-8 p-0"
+                            className="h-8 w-8 p-0 hover:bg-gray-100"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-4 h-4 text-gray-600" />
                           </Button>
+                          
+                          {/* Print Button - Simple icon */}
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="ghost"
+                            className="h-8 w-8 p-0 hover:bg-gray-100"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadLpoPdf(lpo);
+                            }}
+                            title="Print LPO PDF"
+                            data-testid={`button-print-${lpo.id}`}
+                          >
+                            <Printer className="w-4 h-4 text-gray-600" />
+                          </Button>
+                          
+                          {/* Edit Button - Simple icon */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
                             onClick={e => {
                               e.stopPropagation();
                               setEditLpo(lpo);
                             }}
                             data-testid={`button-edit-${lpo.id}`}
-                            className="h-8 w-8 p-0"
+                            className="h-8 w-8 p-0 hover:bg-gray-100"
                           >
-                            <Pencil className="w-4 h-4" />
+                            <Pencil className="w-4 h-4 text-gray-600" />
                           </Button>
-                          {lpo.status === "Draft" && lpo.approvalStatus === "Approved" && (
+                          
+                          {/* Delete Button - Simple icon with red color */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0 hover:bg-red-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Add delete functionality here
+                              console.log('Delete LPO:', lpo.id);
+                            }}
+                            title="Delete LPO"
+                            data-testid={`button-delete-${lpo.id}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                          
+                          {/* Approve Button - Simple icon with green color */}
+                          {lpo.status === "Draft" && (
                             <Button
                               size="sm"
-                              variant="outline"
-                              className="h-8 w-8 p-0"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                sendToSupplierMutation.mutate(lpo.id);
-                              }}
-                              data-testid={`button-send-${lpo.id}`}
-                            >
-                              <Send className="w-4 h-4" />
-                            </Button>
-                          )}
-                          {lpo.approvalStatus === "Pending" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 w-8 p-0"
+                              variant="ghost"
+                              className="h-8 w-8 p-0 hover:bg-green-50"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 approveLpoMutation.mutate({ lpoId: lpo.id });
                               }}
                               data-testid={`button-approve-${lpo.id}`}
+                              title="Approve LPO"
                             >
-                              <CheckCircle className="w-4 h-4" />
+                              <CheckCircle className="w-4 h-4 text-green-500" />
                             </Button>
                           )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-8 w-8 p-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadLpoPdf(lpo);
-                            }}
-                            title="Download LPO PDF"
-                            data-testid={`button-download-pdf-${lpo.id}`}
-                          >
-                            <Download className="w-4 h-4" />
-                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1689,7 +1668,7 @@ function LpoDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-7xl max-h-[95vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
@@ -1707,9 +1686,10 @@ function LpoDetailDialog({
           </DialogTitle>
         </DialogHeader>
         
-        <div className="space-y-6">
+        <div className="flex-1 overflow-y-auto px-1">
+          <div className="space-y-6">
           {/* Header Information */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="space-y-4">
               <div>
                 <Label className="text-sm font-medium text-gray-500">Status</Label>
@@ -1719,14 +1699,6 @@ function LpoDetailDialog({
                       {lpoData.status}
                     </span>
                   )}
-                </div>
-              </div>
-              <div>
-                <Label className="text-sm font-medium text-gray-500">Approval Status</Label>
-                <div className="mt-1">
-                  <Badge className={approvalStatusColors[lpoData.approvalStatus as keyof typeof approvalStatusColors] || "text-white"}>
-                    {lpoData.approvalStatus || "Not Required"}
-                  </Badge>
                 </div>
               </div>
             </div>
@@ -1780,7 +1752,7 @@ function LpoDetailDialog({
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm font-medium text-gray-500">Supplier Name</Label>
                     <div className="mt-1 text-sm font-medium">{supplier?.name || lpoData.supplierName || "Not specified"}</div>
@@ -1818,7 +1790,7 @@ function LpoDetailDialog({
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm font-medium text-gray-500">Customer Name</Label>
                     <div className="mt-1 text-sm font-medium">{customerDetails.name || customerDetails.companyName || "Not specified"}</div>
@@ -1871,7 +1843,7 @@ function LpoDetailDialog({
                 <div className="space-y-4">
                   {sourceQuotes.map((quote: any, index: number) => (
                     <div key={quote.id} className="border rounded-lg p-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
                         <div>
                           <Label className="text-sm font-medium text-gray-500">Quote Number</Label>
                           <div className="mt-1 text-sm font-medium">{quote.quoteNumber}</div>
@@ -1931,29 +1903,36 @@ function LpoDetailDialog({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <Label className="text-sm font-medium text-gray-500">Subtotal</Label>
-                  <div className="text-2xl font-bold text-gray-900 mt-1">
-                    {lpoData.currency} {Number(lpoData.subtotal || 0).toLocaleString()}
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="text-center p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                    <Label className="text-sm font-medium text-gray-600">Subtotal (Before Tax)</Label>
+                    <div className="text-2xl font-bold text-gray-900 mt-2">
+                      {formatCurrency(Number(lpoData.subtotal || 0), lpoData.currency)}
+                    </div>
+                  </div>
+                  <div className="text-center p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                    <Label className="text-sm font-medium text-gray-600">VAT Amount (10%)</Label>
+                    <div className="text-2xl font-bold text-red-600 mt-2">
+                      {formatCurrency(Number(lpoData.taxAmount || 0), lpoData.currency)}
+                    </div>
+                  </div>
+                  <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200 shadow-sm">
+                    <Label className="text-sm font-medium text-blue-600">Total Amount (Including VAT)</Label>
+                    <div className="text-2xl font-bold text-blue-600 mt-2">
+                      {formatCurrency(Number(lpoData.totalAmount || 0), lpoData.currency)}
+                    </div>
                   </div>
                 </div>
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <Label className="text-sm font-medium text-gray-500">Tax Amount</Label>
-                  <div className="text-2xl font-bold text-gray-900 mt-1">
-                    {lpoData.currency} {Number(lpoData.taxAmount || 0).toLocaleString()}
-                  </div>
-                </div>
-                <div className="text-center p-4 bg-blue-50 rounded-lg">
-                  <Label className="text-sm font-medium text-blue-600">Total Amount</Label>
-                  <div className="text-2xl font-bold text-blue-600 mt-1">
-                    {lpoData.currency} {Number(lpoData.totalAmount || 0).toLocaleString()}
-                  </div>
-                </div>
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <Label className="text-sm font-medium text-gray-500">Currency</Label>
-                  <div className="text-2xl font-bold text-gray-900 mt-1">
-                    {lpoData.currency || "BHD"}
+                <div className="bg-white p-4 rounded-lg border border-gray-200">
+                  <div className="text-center">
+                    <p className="text-sm text-gray-600 mb-2">Tax Calculation Breakdown</p>
+                    <p className="text-sm text-gray-700">
+                      Subtotal: {formatCurrency(Number(lpoData.subtotal || 0), lpoData.currency)} + 
+                      VAT (10%): {formatCurrency(Number(lpoData.taxAmount || 0), lpoData.currency)} = 
+                      Total: {formatCurrency(Number(lpoData.totalAmount || 0), lpoData.currency)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Currency: {lpoData.currency || "BHD"}</p>
                   </div>
                 </div>
               </div>
@@ -2025,8 +2004,8 @@ function LpoDetailDialog({
                 </div>
               ) : (
                 <>
-                  <div className="overflow-x-auto">
-                    <Table>
+                  <div className="overflow-x-auto max-w-full">
+                    <Table className="min-w-full">
                       <TableHeader>
                         <TableRow>
                           <TableHead>Item Description</TableHead>
@@ -2036,7 +2015,9 @@ function LpoDetailDialog({
                           <TableHead>Unit Cost</TableHead>
                           <TableHead>Disc %</TableHead>
                           <TableHead>Disc Amt</TableHead>
-                          <TableHead>Total Cost</TableHead>
+                          <TableHead>VAT %</TableHead>
+                          <TableHead>VAT Amt</TableHead>
+                          <TableHead>Net Total</TableHead>
                           <TableHead>Urgency</TableHead>
                           <TableHead>Status</TableHead>
                         </TableRow>
@@ -2120,8 +2101,26 @@ function LpoDetailDialog({
                               <TableCell className="text-right">
                                 {lpoData.currency} {Number(item.discountAmount || 0).toFixed(3)}
                               </TableCell>
+                              <TableCell className="text-center">
+                                {Number(item.vatPercent || 0).toFixed(0)}%
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {lpoData.currency} {Number(item.vatAmount || 0).toFixed(3)}
+                              </TableCell>
                               <TableCell className="text-right font-medium">
-                                {lpoData.currency} {Number(item.totalCost || 0).toLocaleString()}
+                                {lpoData.currency} {(() => {
+                                  const qty = Number(item.quantity || 0);
+                                  const unitCost = Number(item.unitCost || 0);
+                                  const grossAmount = qty * unitCost;
+                                  const discountAmount = Number(item.discountAmount || 0);
+                                  const discountPercent = Number(item.discountPercent || 0);
+                                  const calculatedDiscount = discountAmount > 0 ? discountAmount : (grossAmount * discountPercent / 100);
+                                  const netAmount = Math.max(0, grossAmount - calculatedDiscount);
+                                  const vatAmount = Number(item.vatAmount || 0);
+                                  const vatPercent = Number(item.vatPercent || 0);
+                                  const calculatedVat = vatAmount > 0 ? vatAmount : (netAmount * vatPercent / 100);
+                                  return (netAmount + calculatedVat).toFixed(3);
+                                })()}
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={
@@ -2326,6 +2325,7 @@ function LpoDetailDialog({
               </div>
             </CardContent>
           </Card>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -2382,7 +2382,6 @@ function CreateLpoForm({ onClose, onCreated }: { onClose: () => void; onCreated:
         totalAmount: formData.items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0),
         sourceType: "Manual",
         version: 1,
-        approvalStatus: formData.requiresApproval ? "Pending" : "Not Required",
       };
 
       const response = await apiRequest("POST", "/api/supplier-lpos", lpoData);

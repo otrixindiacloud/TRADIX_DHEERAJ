@@ -1362,19 +1362,26 @@ export default function SalesOrders() {
                 )}
                 
                 <div className="bg-blue-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-gray-900 mb-2">Financial Summary</h4>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-600">Subtotal</p>
-                      <p className="text-sm font-medium">{formatCurrency(Number(selectedOrder.subtotal) || 0)}</p>
+                  <h4 className="font-medium text-gray-900 mb-3">Financial Summary</h4>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-white p-3 rounded border">
+                        <p className="text-xs text-gray-600 mb-1">Subtotal (Before Tax)</p>
+                        <p className="text-lg font-semibold text-gray-900">{formatCurrency(Number(selectedOrder.subtotal) || 0)}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded border">
+                        <p className="text-xs text-gray-600 mb-1">VAT Amount (10%)</p>
+                        <p className="text-lg font-semibold text-red-600">{formatCurrency(Number(selectedOrder.taxAmount) || 0)}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-600">Tax Amount</p>
-                      <p className="text-sm font-medium">{formatCurrency(Number(selectedOrder.taxAmount) || 0)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-600">Total Amount</p>
-                      <p className="text-lg font-bold text-blue-600">{formatCurrency(Number(selectedOrder.totalAmount) || 0)}</p>
+                    <div className="bg-white p-4 rounded border-2 border-blue-200">
+                      <div className="flex justify-between items-center">
+                        <p className="text-sm font-medium text-gray-700">Total Amount (Including VAT)</p>
+                        <p className="text-2xl font-bold text-blue-600">{formatCurrency(Number(selectedOrder.totalAmount) || 0)}</p>
+                      </div>
+                      <div className="mt-2 text-xs text-gray-500">
+                        Subtotal: {formatCurrency(Number(selectedOrder.subtotal) || 0)} + VAT: {formatCurrency(Number(selectedOrder.taxAmount) || 0)} = {formatCurrency(Number(selectedOrder.totalAmount) || 0)}
+                      </div>
                     </div>
                   </div>
                 </div>

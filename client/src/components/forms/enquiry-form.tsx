@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -34,7 +34,10 @@ const ENQUIRY_SOURCES = ["Email", "Phone", "Web Form", "Walk-in", "Referral"];
 const enquiryFormSchema = z.object({
   customerId: z.string().min(1, "Customer is required"),
   source: z.enum(["Email", "Phone", "Web Form", "Walk-in", "Referral"]),
-  referralCustomerId: z.string().uuid().optional(),
+  referralCustomerId: z.string().optional().refine((val) => {
+    if (!val || val === '') return true; // Allow empty string
+    return z.string().uuid().safeParse(val).success;
+  }, "Please enter a valid customer ID"),
   referralName: z.string().optional(),
   targetDeliveryDate: z.string().optional().refine((date) => {
     if (!date) return true;
@@ -71,11 +74,30 @@ export default function EnquiryForm({ onSuccess, onCancel, initialData, enquiryI
   
   const customers = customersData.customers || [];
   const source = form.watch('source');
+  const referralCustomerId = form.watch('referralCustomerId');
+  const referralName = form.watch('referralName');
+
+  // Mutual exclusivity logic for referral fields
+  useEffect(() => {
+    if (referralCustomerId && referralCustomerId !== '' && referralName && referralName !== '') {
+      // If both fields have values, clear the manual entry
+      form.setValue('referralName', '');
+    }
+  }, [referralCustomerId, referralName, form]);
+
+  useEffect(() => {
+    if (referralName && referralName !== '' && referralCustomerId && referralCustomerId !== '') {
+      // If both fields have values, clear the customer selection
+      form.setValue('referralCustomerId', '');
+    }
+  }, [referralName, referralCustomerId, form]);
 
   const createEnquiry = useMutation({
     mutationFn: async (data: EnquiryFormData) => {
       const payload = {
         ...data,
+        referralCustomerId: data.referralCustomerId && data.referralCustomerId !== '' ? data.referralCustomerId : undefined,
+        referralName: data.referralName && data.referralName !== '' ? data.referralName : undefined,
         targetDeliveryDate: data.targetDeliveryDate ? new Date(data.targetDeliveryDate).toISOString() : undefined,
         // createdBy will be handled by the server with a default value
       };
@@ -232,15 +254,26 @@ export default function EnquiryForm({ onSuccess, onCancel, initialData, enquiryI
                             customer.name.toLowerCase().includes(search.toLowerCase())
                           )
                         : [];
+                      const isDisabled = !!(referralName && referralName !== '');
                       return (
                         <FormItem>
-                          <FormLabel className="flex items-center gap-2">
-                            <FaUser className="h-4 w-4 text-gray-600" />
+                          <FormLabel className={`flex items-center gap-2 ${isDisabled ? 'text-gray-400' : ''}`}>
+                            <FaUser className={`h-4 w-4 ${isDisabled ? 'text-gray-400' : 'text-gray-600'}`} />
                             Referred By (Existing Customer)
                           </FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select 
+                            onValueChange={(value) => {
+                              if (!isDisabled) {
+                                field.onChange(value);
+                                // Clear the other field when this one is selected
+                                form.setValue('referralName', '');
+                              }
+                            }} 
+                            defaultValue={field.value}
+                            disabled={isDisabled}
+                          >
                             <FormControl>
-                              <SelectTrigger className="w-full">
+                              <SelectTrigger className={`w-full ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-100' : ''}`}>
                                 <SelectValue placeholder="Select referring customer" />
                               </SelectTrigger>
                             </FormControl>
@@ -253,6 +286,7 @@ export default function EnquiryForm({ onSuccess, onCancel, initialData, enquiryI
                                   value={search}
                                   onChange={e => setSearch(e.target.value)}
                                   autoFocus
+                                  disabled={isDisabled}
                                 />
                               </div>
                               {filteredCustomers.map((customer: any) => (
@@ -270,22 +304,36 @@ export default function EnquiryForm({ onSuccess, onCancel, initialData, enquiryI
                   <FormField
                     control={form.control}
                     name="referralName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center gap-2">
-                          <FaHandshake className="h-4 w-4 text-gray-600" />
-                          Reference Name (Manual Entry)
-                        </FormLabel>
-                        <FormControl>
-                          <Input 
-                            {...field} 
-                            placeholder="Enter reference name manually"
-                            data-testid="input-referral-name"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    render={({ field }) => {
+                      const isDisabled = !!(referralCustomerId && referralCustomerId !== '');
+                      return (
+                        <FormItem>
+                          <FormLabel className={`flex items-center gap-2 ${isDisabled ? 'text-gray-400' : ''}`}>
+                            <FaHandshake className={`h-4 w-4 ${isDisabled ? 'text-gray-400' : 'text-gray-600'}`} />
+                            Reference Name (Manual Entry)
+                          </FormLabel>
+                          <FormControl>
+                            <Input 
+                              {...field} 
+                              placeholder="Enter reference name manually"
+                              data-testid="input-referral-name"
+                              disabled={isDisabled}
+                              className={isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-100' : ''}
+                              onChange={(e) => {
+                                if (!isDisabled) {
+                                  field.onChange(e);
+                                  // Clear the other field when this one is filled
+                                  if (e.target.value && e.target.value.trim() !== '') {
+                                    form.setValue('referralCustomerId', '');
+                                  }
+                                }
+                              }}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
                   />
                 </>
               )}

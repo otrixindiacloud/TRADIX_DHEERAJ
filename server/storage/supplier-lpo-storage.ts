@@ -19,7 +19,6 @@ export class SupplierLpoStorage extends BaseStorage {
       taxAmount: supplierLpos.taxAmount,
       totalAmount: supplierLpos.totalAmount,
       currency: supplierLpos.currency,
-      approvalStatus: supplierLpos.approvalStatus,
       requiresApproval: supplierLpos.requiresApproval,
       paymentTerms: supplierLpos.paymentTerms,
       deliveryTerms: supplierLpos.deliveryTerms,
@@ -152,14 +151,13 @@ export class SupplierLpoStorage extends BaseStorage {
         INSERT INTO supplier_lpos (
           id, lpo_number, supplier_id, status, source_type, grouping_criteria,
           subtotal, tax_amount, total_amount, currency, requires_approval, 
-          approval_status, created_by, source_sales_order_ids, source_quotation_ids, 
+          created_by, source_sales_order_ids, source_quotation_ids, 
           created_at, updated_at, version
         ) VALUES (
           gen_random_uuid(), ${lpoNumber}, ${supplierId}, ${data.status || 'Draft'}, 
           ${data.sourceType || 'Manual'}, ${data.groupingCriteria || null},
           ${data.subtotal || '0'}, ${data.taxAmount || '0'}, ${data.totalAmount || '0'}, 
           ${data.currency || 'BHD'}, ${data.requiresApproval || false}, 
-          ${data.approvalStatus || (data.requiresApproval ? 'Pending' : 'Not Required')}, 
           ${data.createdBy || null}, 
           ${data.sourceSalesOrderIds ? JSON.stringify(data.sourceSalesOrderIds) : null}, 
           ${data.sourceQuotationIds ? JSON.stringify(data.sourceQuotationIds) : null}, 
@@ -426,7 +424,11 @@ export class SupplierLpoStorage extends BaseStorage {
               item_description as "itemDescription",
               quantity,
               unit_price as "unitPrice",
-              line_total as "lineTotal"
+              line_total as "lineTotal",
+              discount_percent as "discountPercent",
+              discount_amount as "discountAmount",
+              vat_percent as "vatPercent",
+              vat_amount as "vatAmount"
             FROM supplier_quote_items 
             WHERE supplier_quote_id = ${quote.id}
           `);
@@ -457,6 +459,10 @@ export class SupplierLpoStorage extends BaseStorage {
                 quantity: Math.max(0, Number(item.quantity) || 0),
                 unitPrice: item.unitPrice || '0',
                 lineTotal: item.lineTotal || '0',
+                discountPercent: item.discountPercent || '0',
+                discountAmount: item.discountAmount || '0',
+                vatPercent: item.vatPercent || '0',
+                vatAmount: item.vatAmount || '0',
                 // Add default values for fields not in the query
                 unitOfMeasure: 'PCS',
                 specification: '',
@@ -548,7 +554,6 @@ export class SupplierLpoStorage extends BaseStorage {
           currency: supplierQuotes[0].currency || 'BHD',
           createdBy: userId,
           requiresApproval: false,
-          approvalStatus: 'Not Required',
           sourceQuotationIds: supplierQuotes.map(q => q.id),
           lpoDate: new Date(),
           expectedDeliveryDate: supplierQuotes[0].validUntil ? new Date(supplierQuotes[0].validUntil) : undefined,
@@ -577,6 +582,11 @@ export class SupplierLpoStorage extends BaseStorage {
           pendingQuantity: item.quantity,
           unitCost: item.unitPrice as any,
           totalCost: item.lineTotal as any, // Use lineTotal instead of totalPrice
+          // Transfer discount and VAT data from quote item
+          discountPercent: item.discountPercent || '0',
+          discountAmount: item.discountAmount || '0',
+          vatPercent: item.vatPercent || '0',
+          vatAmount: item.vatAmount || '0',
           lineNumber: idx + 1,
           deliveryStatus: 'Pending',
           urgency: 'Normal',
@@ -598,13 +608,15 @@ export class SupplierLpoStorage extends BaseStorage {
                 INSERT INTO supplier_lpo_items (
                   id, supplier_lpo_id, quotation_item_id, item_id, supplier_code, barcode,
                   item_description, quantity, received_quantity, pending_quantity, unit_cost,
-                  total_cost, line_number, delivery_status, urgency, special_instructions,
+                  total_cost, discount_percent, discount_amount, vat_percent, vat_amount,
+                  line_number, delivery_status, urgency, special_instructions,
                   created_at, updated_at
                 ) VALUES (
                   gen_random_uuid(), ${item.supplierLpoId}, ${item.quotationItemId}, 
                   ${item.itemId}, ${item.supplierCode}, ${item.barcode},
                   ${item.itemDescription}, ${item.quantity}, ${item.receivedQuantity}, 
                   ${item.pendingQuantity}, ${item.unitCost}, ${item.totalCost}, 
+                  ${item.discountPercent}, ${item.discountAmount}, ${item.vatPercent}, ${item.vatAmount},
                   ${item.lineNumber}, ${item.deliveryStatus}, ${item.urgency}, 
                   ${item.specialInstructions}, NOW(), NOW()
                 )
@@ -635,11 +647,11 @@ export class SupplierLpoStorage extends BaseStorage {
   }
   async createAmendedSupplierLpo(parentLpoId: string, reason: string, amendmentType: string, userId?: string) {
     const parent = await this.getSupplierLpo(parentLpoId); if (!parent) throw new Error('Parent LPO not found');
-    return this.createSupplierLpo({ supplierId: parent.supplierId, sourceType: parent.sourceType, groupingCriteria: parent.groupingCriteria, subtotal: parent.subtotal, totalAmount: parent.totalAmount, currency: parent.currency, version: (parent.version||1)+1, parentLpoId, amendmentReason: reason, amendmentType, createdBy: userId, requiresApproval: parent.requiresApproval, approvalStatus: parent.approvalStatus, sourceSalesOrderIds: parent.sourceSalesOrderIds } as any);
+    return this.createSupplierLpo({ supplierId: parent.supplierId, sourceType: parent.sourceType, groupingCriteria: parent.groupingCriteria, subtotal: parent.subtotal, totalAmount: parent.totalAmount, currency: parent.currency, version: (parent.version||1)+1, parentLpoId, amendmentReason: reason, amendmentType, createdBy: userId, requiresApproval: parent.requiresApproval, sourceSalesOrderIds: parent.sourceSalesOrderIds } as any);
   }
-  async submitForApproval(id: string, userId: string) { const lpo = await this.getSupplierLpo(id); if (!lpo) throw new Error('Supplier LPO not found'); return this.updateSupplierLpo(id, { requiresApproval: true, approvalStatus: 'Pending' } as any); }
-  async approveSupplierLpo(id: string, userId: string, notes?: string) { const lpo = await this.getSupplierLpo(id); if (!lpo) throw new Error('Supplier LPO not found'); return this.updateSupplierLpo(id, { approvalStatus: 'Approved', approvedBy: userId as any, approvedAt: new Date(), approvalNotes: notes } as any); }
-  async rejectSupplierLpo(id: string, userId: string, notes: string) { const lpo = await this.getSupplierLpo(id); if (!lpo) throw new Error('Supplier LPO not found'); return this.updateSupplierLpo(id, { approvalStatus: 'Rejected', approvalNotes: notes } as any); }
+  async submitForApproval(id: string, userId: string) { const lpo = await this.getSupplierLpo(id); if (!lpo) throw new Error('Supplier LPO not found'); return this.updateSupplierLpo(id, { requiresApproval: true } as any); }
+  async approveSupplierLpo(id: string, userId: string, notes?: string) { const lpo = await this.getSupplierLpo(id); if (!lpo) throw new Error('Supplier LPO not found'); return this.updateSupplierLpo(id, { approvedBy: userId as any, approvedAt: new Date(), approvalNotes: notes } as any); }
+  async rejectSupplierLpo(id: string, userId: string, notes: string) { const lpo = await this.getSupplierLpo(id); if (!lpo) throw new Error('Supplier LPO not found'); return this.updateSupplierLpo(id, { approvalNotes: notes } as any); }
   async sendToSupplier(id: string, userId: string) { const lpo = await this.getSupplierLpo(id); if (!lpo) throw new Error('Supplier LPO not found'); return this.updateSupplierLpo(id, { status: 'Sent', sentToSupplierAt: new Date() } as any); }
   async confirmBySupplier(id: string, confirmationReference?: string) { const lpo = await this.getSupplierLpo(id); if (!lpo) throw new Error('Supplier LPO not found'); return this.updateSupplierLpo(id, { status: 'Confirmed', confirmedBySupplierAt: new Date(), supplierConfirmationReference: confirmationReference } as any); }
   async updateExpectedDeliveryDate(id: string, expectedDeliveryDate: string, userId?: string) { 
@@ -652,10 +664,91 @@ export class SupplierLpoStorage extends BaseStorage {
   }
   async getSupplierLpoBacklog() { return db.select().from(supplierLpos).where(sql`${supplierLpos.status} IN ('Draft','Sent')`); }
   async getCustomerOrderBacklog() { return []; }
-  async getSupplierLpoItems(lpoId: string) { return db.select().from(supplierLpoItems).where(eq(supplierLpoItems.supplierLpoId, lpoId)); }
+  async getSupplierLpoItems(lpoId: string) { 
+    return db.select({
+      id: supplierLpoItems.id,
+      supplierLpoId: supplierLpoItems.supplierLpoId,
+      salesOrderItemId: supplierLpoItems.salesOrderItemId,
+      quotationItemId: supplierLpoItems.quotationItemId,
+      itemId: supplierLpoItems.itemId,
+      lineNumber: supplierLpoItems.lineNumber,
+      supplierCode: supplierLpoItems.supplierCode,
+      barcode: supplierLpoItems.barcode,
+      itemDescription: supplierLpoItems.itemDescription,
+      quantity: supplierLpoItems.quantity,
+      receivedQuantity: supplierLpoItems.receivedQuantity,
+      pendingQuantity: supplierLpoItems.pendingQuantity,
+      unitCost: supplierLpoItems.unitCost,
+      totalCost: supplierLpoItems.totalCost,
+      discountPercent: supplierLpoItems.discountPercent,
+      discountAmount: supplierLpoItems.discountAmount,
+      vatPercent: supplierLpoItems.vatPercent,
+      vatAmount: supplierLpoItems.vatAmount,
+      requestedDeliveryDate: supplierLpoItems.requestedDeliveryDate,
+      confirmedDeliveryDate: supplierLpoItems.confirmedDeliveryDate,
+      deliveryStatus: supplierLpoItems.deliveryStatus,
+      urgency: supplierLpoItems.urgency,
+      specialInstructions: supplierLpoItems.specialInstructions,
+      createdAt: supplierLpoItems.createdAt,
+      updatedAt: supplierLpoItems.updatedAt
+    }).from(supplierLpoItems).where(eq(supplierLpoItems.supplierLpoId, lpoId)); 
+  }
   async getSupplierLpoItem(id: string) { const r = await db.select().from(supplierLpoItems).where(eq(supplierLpoItems.id, id)).limit(1); return r[0]; }
   async createSupplierLpoItem(item: InsertSupplierLpoItem) { const r = await db.insert(supplierLpoItems).values(item as any).returning(); return r[0]; }
   async updateSupplierLpoItem(id: string, item: Partial<InsertSupplierLpoItem>) { const r = await db.update(supplierLpoItems).set(item as any).where(eq(supplierLpoItems.id, id)).returning(); return r[0]; }
   async deleteSupplierLpoItem(id: string) { await db.delete(supplierLpoItems).where(eq(supplierLpoItems.id, id)); }
   async bulkCreateSupplierLpoItems(itemsArr: InsertSupplierLpoItem[]) { if (!itemsArr.length) return []; const r = await db.insert(supplierLpoItems).values(itemsArr as any).returning(); return r; }
+  
+  // Update LPO tax amount based on item VAT amounts
+  async updateLpoTaxAmountFromItems(lpoId: string) {
+    try {
+      // Get all items for this LPO
+      const items = await this.getSupplierLpoItems(lpoId);
+      
+      // Calculate total VAT amount from items
+      let totalVatAmount = 0;
+      let totalSubtotal = 0;
+      
+      items.forEach(item => {
+        const qty = Number(item.quantity || 0);
+        const unitCost = Number(item.unitCost || 0);
+        const grossAmount = Math.round((qty * unitCost) * 100) / 100;
+        const discountPercent = Number(item.discountPercent || 0);
+        const discountAmount = Number(item.discountAmount || 0);
+        const calculatedDiscountAmount = discountAmount > 0 
+          ? Math.min(discountAmount, grossAmount * 0.999) // Cap at 99.9%
+          : Math.round((grossAmount * discountPercent / 100) * 100) / 100;
+        const lineNet = Math.max(0.01, Math.round((grossAmount - calculatedDiscountAmount) * 100) / 100);
+        
+        // Use stored VAT amount if available, otherwise calculate from percentage
+        const itemVatPercent = Number(item.vatPercent || 10); // Default to 10% VAT
+        const itemVatAmount = Number(item.vatAmount || 0);
+        const calculatedVatAmount = itemVatAmount > 0 
+          ? itemVatAmount 
+          : Math.round((lineNet * itemVatPercent / 100) * 100) / 100;
+        
+        totalVatAmount += calculatedVatAmount;
+        totalSubtotal += lineNet;
+      });
+      
+      // Update the LPO with calculated tax amount and total
+      const newTotalAmount = Math.round((totalSubtotal + totalVatAmount) * 100) / 100;
+      
+      const updatedLpo = await db.update(supplierLpos)
+        .set({
+          taxAmount: totalVatAmount.toFixed(3),
+          totalAmount: newTotalAmount.toFixed(3),
+          updatedAt: new Date()
+        })
+        .where(eq(supplierLpos.id, lpoId))
+        .returning();
+      
+      console.log(`[updateLpoTaxAmountFromItems] Updated LPO ${lpoId}: taxAmount=${totalVatAmount.toFixed(3)}, totalAmount=${newTotalAmount.toFixed(3)}`);
+      
+      return updatedLpo[0];
+    } catch (error) {
+      console.error(`[updateLpoTaxAmountFromItems] Error updating LPO ${lpoId}:`, error);
+      throw error;
+    }
+  }
 }

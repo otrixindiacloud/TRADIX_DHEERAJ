@@ -116,8 +116,8 @@ export function formatCurrencyAmount(amount: number, currency: string = 'BHD'): 
     return new Intl.NumberFormat("en-BH", {
       style: "currency",
       currency: "BHD",
-      minimumFractionDigits: 3,
-      maximumFractionDigits: 3,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(roundedAmount);
   }
   

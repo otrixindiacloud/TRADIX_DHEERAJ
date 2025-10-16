@@ -535,9 +535,12 @@ export default function Invoicing() {
 
   // Base list comes from delivery items if present, else invoice items
   const baseItemsForDisplay = (selectedInvoiceDeliveryItems && selectedInvoiceDeliveryItems.length > 0) ? selectedInvoiceDeliveryItems : selectedInvoiceItems;
+  
   // Enrich with Sales Order item details (description, unit price, quantity)
   const itemsForDisplay = (baseItemsForDisplay || []).map((it: any, idx: number) => {
     let match = null as any;
+    
+    // Try to find matching sales order item
     if (it.salesOrderItemId && Array.isArray(salesOrderItemsForInvoice)) {
       match = salesOrderItemsForInvoice.find((s: any) => s.id === it.salesOrderItemId);
     }
@@ -551,27 +554,34 @@ export default function Invoicing() {
     if (!match && Array.isArray(salesOrderItemsForInvoice) && salesOrderItemsForInvoice[idx]) {
       match = salesOrderItemsForInvoice[idx];
     }
-    const quantity = it.quantity ?? match?.quantity;
-    const unitPrice = (it.unitPrice != null && it.unitPrice !== undefined) ? it.unitPrice : match?.unitPrice;
+    
+    // Use invoice item values first, then fallback to sales order values
+    const quantity = it.quantity ?? it.deliveredQuantity ?? it.pickedQuantity ?? it.orderedQuantity ?? match?.quantity ?? 0;
+    const unitPrice = (it.unitPrice != null && it.unitPrice !== undefined) ? it.unitPrice : (match?.unitPrice ?? 0);
     const totalPrice = (it.totalPrice != null && it.totalPrice !== undefined)
       ? it.totalPrice
-      : (unitPrice != null && quantity != null) ? Number(unitPrice) * Number(quantity) : match?.totalPrice;
+      : (unitPrice != null && quantity != null) ? Number(unitPrice) * Number(quantity) : (match?.totalPrice ?? 0);
+    
     const isGeneric = (txt?: string) => {
       if (!txt) return true;
       const v = String(txt).trim().toLowerCase();
-      return v === 'generic item' || v === 'item from sales order' || v === 'delivery item' || v === 'item';
+      return v === 'generic item' || v === 'item from sales order' || v === 'delivery item' || v === 'item' || v === '';
     };
+    
     const resolvedDescription = isGeneric(it.description)
-      ? (match?.description || it.itemDescription || it.productName)
-      : (it.description || match?.description || it.itemDescription || it.productName);
+      ? (match?.description || it.itemDescription || it.productName || `Item ${idx + 1}`)
+      : (it.description || match?.description || it.itemDescription || it.productName || `Item ${idx + 1}`);
+    
     return {
       ...it,
+      id: it.id || `item-${idx}`,
+      lineNumber: it.lineNumber || idx + 1,
       description: resolvedDescription,
-      supplierCode: it.supplierCode || match?.supplierCode,
-      barcode: it.barcode || match?.barcode,
-      quantity,
-      unitPrice,
-      totalPrice,
+      supplierCode: it.supplierCode || match?.supplierCode || '',
+      barcode: it.barcode || match?.barcode || '',
+      quantity: Number(quantity) || 0,
+      unitPrice: Number(unitPrice) || 0,
+      totalPrice: Number(totalPrice) || 0,
     };
   });
 
@@ -1115,34 +1125,53 @@ export default function Invoicing() {
                   </div>
                 </div>
 
-                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-                  <h4 className="font-medium text-yellow-900 mb-3 flex items-center">
-                    <DollarSign className="h-4 w-4 mr-2" />
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-200 shadow-sm">
+                  <h4 className="font-semibold text-blue-900 mb-6 flex items-center text-lg">
+                    <DollarSign className="h-5 w-5 mr-2" />
                     Financial Summary
                   </h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Subtotal:</span>
-                      <span className="font-medium">{formatCurrency(selectedInvoice.subtotal || 0)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Tax:</span>
-                      <span className="font-medium">{formatCurrency(selectedInvoice.taxAmount || 0)}</span>
-                    </div>
-                    <div className="flex justify-between font-bold text-lg border-t pt-2">
-                      <span>Total:</span>
-                      <span className="text-blue-600">{formatCurrency(selectedInvoice.totalAmount || 0)}</span>
-                    </div>
-                    <div className="flex justify-between text-green-600">
-                      <span>Paid:</span>
-                      <span className="font-medium">{formatCurrency(selectedInvoice.paidAmount || 0)}</span>
-                    </div>
-                    {(selectedInvoice.totalAmount || 0) > (selectedInvoice.paidAmount || 0) && (
-                      <div className="flex justify-between text-red-600 font-medium">
-                        <span>Outstanding:</span>
-                        <span>{formatCurrency((selectedInvoice.totalAmount || 0) - (selectedInvoice.paidAmount || 0))}</span>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                        <p className="text-sm font-medium text-gray-600 mb-2">Subtotal (Before Tax)</p>
+                        <p className="text-xl font-bold text-gray-900">{formatCurrency(Number(selectedInvoice.subtotal || 0))}</p>
                       </div>
-                    )}
+                      <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                        <p className="text-sm font-medium text-gray-600 mb-2">VAT Amount (10%)</p>
+                        <p className="text-xl font-bold text-red-600">{formatCurrency(Number(selectedInvoice.taxAmount || 0))}</p>
+                      </div>
+                    </div>
+                    <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 rounded-xl text-white shadow-lg">
+                      <div className="flex justify-between items-center mb-3">
+                        <p className="text-lg font-semibold">Total Amount (Including VAT)</p>
+                        <p className="text-3xl font-bold">{formatCurrency(Number(selectedInvoice.totalAmount || 0))}</p>
+                      </div>
+                      <div className="text-sm text-blue-100 bg-blue-700 bg-opacity-30 p-3 rounded-lg">
+                        <div className="flex justify-between">
+                          <span>Subtotal: {formatCurrency(Number(selectedInvoice.subtotal || 0))}</span>
+                          <span>+</span>
+                          <span>VAT: {formatCurrency(Number(selectedInvoice.taxAmount || 0))}</span>
+                          <span>=</span>
+                          <span className="font-semibold">{formatCurrency(Number(selectedInvoice.totalAmount || 0))}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-green-700">Paid Amount</span>
+                          <span className="text-lg font-bold text-green-600">{formatCurrency(Number(selectedInvoice.paidAmount || 0))}</span>
+                        </div>
+                      </div>
+                      {(Number(selectedInvoice.totalAmount || 0)) > (Number(selectedInvoice.paidAmount || 0)) && (
+                        <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-red-700">Outstanding Balance</span>
+                            <span className="text-lg font-bold text-red-600">{formatCurrency(Number(selectedInvoice.totalAmount || 0) - Number(selectedInvoice.paidAmount || 0))}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1156,6 +1185,22 @@ export default function Invoicing() {
                 <div className="text-sm text-gray-600 mb-3">
                   This invoice includes detailed material specifications, supplier codes, barcodes, and comprehensive item information as required for business operations.
                 </div>
+                
+                {/* Debug Information */}
+                {process.env.NODE_ENV === 'development' && (
+                  <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs">
+                    <div className="font-semibold text-yellow-800 mb-2">Debug Information:</div>
+                    <div className="space-y-1 text-yellow-700">
+                      <div>Invoice Items: {selectedInvoiceItems?.length || 0}</div>
+                      <div>Delivery Items: {selectedInvoiceDeliveryItems?.length || 0}</div>
+                      <div>Sales Order Items: {salesOrderItemsForInvoice?.length || 0}</div>
+                      <div>Display Items: {itemsForDisplay?.length || 0}</div>
+                      <div>Invoice ID: {selectedInvoice?.id}</div>
+                      <div>Delivery ID: {selectedInvoice?.deliveryId || selectedInvoice?.deliveryNoteId || selectedInvoice?.delivery?.id}</div>
+                      <div>Sales Order ID: {salesOrderIdForInvoice}</div>
+                    </div>
+                  </div>
+                )}
                 {/* Invoice Items Table */}
                 <div className="overflow-x-auto mb-4 border rounded-md bg-white">
                   <table className="min-w-full text-sm">
@@ -1178,15 +1223,20 @@ export default function Invoicing() {
                         <tr><td colSpan={7} className="px-3 py-4 text-center text-red-600">Failed to load items</td></tr>
                       )}
                       {!isLoadingInvoiceItems && !invoiceItemsError && itemsForDisplay.length === 0 && (
-                        <tr><td colSpan={7} className="px-3 py-4 text-center text-gray-500">No items have been added to this invoice yet.</td></tr>
+                        <tr><td colSpan={7} className="px-3 py-4 text-center text-gray-500">
+                          <div className="flex flex-col items-center gap-2">
+                            <span>No items have been added to this invoice yet.</span>
+                            <span className="text-xs text-gray-400">This may be due to missing delivery items or data synchronization issues.</span>
+                          </div>
+                        </td></tr>
                       )}
-                      {!isLoadingInvoiceItems && !invoiceItemsError && itemsForDisplay.map((item: any) => {
-                        const primaryLabel = item.description || item.itemDescription || item.productName || 'Item';
+                      {!isLoadingInvoiceItems && !invoiceItemsError && itemsForDisplay.map((item: any, index: number) => {
+                        const primaryLabel = item.description || item.itemDescription || item.productName || `Item ${index + 1}`;
                         const secondaryLabel = item.specialInstructions || item.pickingNotes || item.qualityNotes || item.notes;
                         const specs = item.specifications || item.itemDetails?.specifications || item.pickingNotes || item.qualityNotes || item.notes;
                         return (
-                          <tr key={item.id} className="border-t hover:bg-gray-50">
-                          <td className="px-3 py-2 font-mono text-xs text-gray-600">{item.lineNumber}</td>
+                          <tr key={item.id || `item-${index}`} className="border-t hover:bg-gray-50">
+                          <td className="px-3 py-2 font-mono text-xs text-gray-600">{item.lineNumber || index + 1}</td>
                           <td className="px-3 py-2">
                             <div className="flex flex-col">
                               <span className="font-medium text-gray-900">{primaryLabel}</span>
@@ -1194,9 +1244,9 @@ export default function Invoicing() {
                               {specs && specs !== secondaryLabel && <span className="text-[11px] text-gray-500">{specs}</span>}
                             </div>
                           </td>
-                          <td className="px-3 py-2 text-gray-700 font-mono text-xs">{item.supplierCode || item.item?.supplierCode}</td>
-                          <td className="px-3 py-2 text-gray-700 font-mono text-xs">{item.barcode || item.item?.barcode}</td>
-                          <td className="px-3 py-2 text-right">{item.quantity}</td>
+                          <td className="px-3 py-2 text-gray-700 font-mono text-xs">{item.supplierCode || item.item?.supplierCode || '-'}</td>
+                          <td className="px-3 py-2 text-gray-700 font-mono text-xs">{item.barcode || item.item?.barcode || '-'}</td>
+                          <td className="px-3 py-2 text-right">{Number(item.quantity || 0)}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(Number(item.unitPrice || 0))}</td>
                           <td className="px-3 py-2 text-right font-medium">{formatCurrency(Number(item.totalPrice || 0))}</td>
                           </tr>
@@ -1615,3 +1665,4 @@ export default function Invoicing() {
     </div>
   );
 }
+

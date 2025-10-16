@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocation, useParams } from "wouter";
 import { formatDate } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
@@ -28,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import StatusPill from "@/components/status/status-pill";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import SupplierQuoteItemsManager from "@/components/supplier-quote/supplier-quote-items-manager";
 
 interface SupplierQuote {
   id: string;
@@ -251,7 +254,17 @@ export default function SupplierQuoteDetailPage() {
   // Add missing handleEditClick function
   const handleEditClick = () => {
     if (quote) {
-      setEditForm(quote);
+      // Ensure all required fields have default values
+      const formData = {
+        ...quote,
+        supplierName: quote.supplierName || "",
+        totalAmount: quote.totalAmount || "",
+        currency: quote.currency || "BHD",
+        paymentTerms: quote.paymentTerms || "",
+        deliveryTerms: quote.deliveryTerms || "",
+        notes: quote.notes || ""
+      };
+      setEditForm(formData);
       setShowEditDialog(true);
     }
   };
@@ -261,17 +274,63 @@ export default function SupplierQuoteDetailPage() {
     setEditForm(prev => prev ? { ...prev, [key]: value } : prev);
   };
 
-  // Add missing handleEditSave function (mock implementation)
+  // Enhanced handleEditSave function with proper validation
   const handleEditSave = () => {
     if (!quoteId || !editForm) return;
+    
+    // Debug logging to help identify validation issues
+    console.log("Edit form data:", editForm);
+    
+    // Validate required fields - check for empty strings and null/undefined
+    const supplierName = editForm.supplierName?.trim();
+    const totalAmount = editForm.totalAmount?.toString().trim();
+    const currency = editForm.currency?.trim();
+    
+    console.log("Validation values:", { supplierName, totalAmount, currency });
+    
+    if (!supplierName || !totalAmount || !currency) {
+      console.log("Validation failed - missing required fields");
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields (Supplier Name, Total Amount, Currency).",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Validate total amount is a positive number
+    const numericAmount = parseFloat(totalAmount);
+    if (isNaN(numericAmount) || numericAmount < 0) {
+      toast({
+        title: "Validation Error",
+        description: "Total Amount must be a valid positive number.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Prepare the update data
+    const updateData = {
+      supplierName: supplierName,
+      priority: editForm.priority,
+      status: editForm.status,
+      totalAmount: totalAmount,
+      currency: currency,
+      paymentTerms: editForm.paymentTerms || "",
+      deliveryTerms: editForm.deliveryTerms || "",
+      notes: editForm.notes || ""
+    };
     
     fetch(`/api/supplier-quotes/${quoteId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editForm)
+      body: JSON.stringify(updateData)
     })
       .then(async r => {
-        if (!r.ok) throw new Error("Failed to update supplier quote");
+        if (!r.ok) {
+          const errorData = await r.json().catch(() => ({}));
+          throw new Error(errorData.message || "Failed to update supplier quote");
+        }
         return r.json();
       })
       .then(() => {
@@ -450,16 +509,45 @@ export default function SupplierQuoteDetailPage() {
                 <p className="mt-1">{quote?.supplierName}</p>
               </div>
               <div>
+                <label className="text-sm font-medium text-gray-500">Enquiry</label>
+                <p className="mt-1">
+                  {(() => {
+                    if (quote?.notes) {
+                      const enquiryMatch = quote.notes.match(/enquiry\s+([A-Z0-9-]+)/i);
+                      if (enquiryMatch && enquiryMatch[1]) {
+                        return (
+                          <span className="text-blue-600 font-medium">
+                            {enquiryMatch[1]}
+                          </span>
+                        );
+                      }
+                    }
+                    return <span className="text-gray-500 italic">No Enquiry</span>;
+                  })()}
+                </p>
+              </div>
+              <div>
                 <label className="text-sm font-medium text-gray-500">Requisition</label>
-                <p className="mt-1">{quote?.requisitionNumber || 'No Requisition'}</p>
+                <p className="mt-1">
+                  {quote?.requisitionId ? (
+                    <span className="text-green-600 font-medium">
+                      REQ-{quote.requisitionId.slice(-8).toUpperCase()}
+                    </span>
+                  ) : (
+                    <span className="text-gray-500 italic">No Requisition</span>
+                  )}
+                </p>
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Request Date</label>
-                <p className="mt-1">{
-                  quote?.requestDate && !isNaN(Date.parse(quote?.requestDate))
+                <p className="mt-1">
+                  {quote?.requestDate && quote.requestDate !== null && !isNaN(Date.parse(quote.requestDate))
                     ? formatDate(new Date(quote.requestDate), 'MMM dd, yyyy')
+                    : quote?.createdAt && !isNaN(Date.parse(quote.createdAt))
+                    ? formatDate(new Date(quote.createdAt), 'MMM dd, yyyy')
                     : 'N/A'
-                }</p>
+                  }
+                </p>
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Response Date</label>
@@ -562,158 +650,154 @@ export default function SupplierQuoteDetailPage() {
       )}
 
       {/* Items Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quote Items</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left p-2">Description</th>
-                  <th className="text-left p-2">Quantity</th>
-                  <th className="text-left p-2">Unit Price</th>
-                  <th className="text-left p-2">Total Price</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.length > 0 ? (
-                  <>
-                    {items.map((item) => (
-                      <tr key={item.id} className="border-b">
-                        <td className="p-2">
-                          <div>
-                            <p className="font-medium">{item.description}</p>
-                            {item.specifications && (
-                              <p className="text-sm text-gray-500">{item.specifications}</p>
-                            )}
-                            {item.notes && (
-                              <p className="text-xs text-gray-400 italic mt-1">{item.notes}</p>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-2">{item.quantity} {item.unitOfMeasure || 'pcs'}</td>
-                        <td className="p-2">{quote?.currency} {parseFloat(item.unitPrice).toLocaleString()}</td>
-                        <td className="p-2 font-medium">{quote?.currency} {parseFloat(item.lineTotal).toLocaleString()}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-t-2 border-gray-200 font-semibold">
-                      <td colSpan={3} className="p-2 text-right">Total Amount:</td>
-                      <td className="p-2">{quote?.currency} {quote?.totalAmount}</td>
-                      <td colSpan={2}></td>
-                    </tr>
-                  </>
-                ) : (
-                  <tr>
-                    <td colSpan={6} className="p-8 text-center text-gray-500">
-                      <div className="flex flex-col items-center gap-2">
-                        <FileText className="h-8 w-8 text-gray-400" />
-                        <p className="text-sm font-medium">No items in this quote</p>
-                        <p className="text-xs">This supplier quote does not contain any items yet. Items will appear here once they are added.</p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      <SupplierQuoteItemsManager 
+        supplierQuoteId={quoteId || ''} 
+        editable={true}
+      />
 
       {/* Delete Confirmation Dialog */}
       {/* Edit Supplier Quote Modal Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Supplier Quote</DialogTitle>
+            {editForm && (
+              <p className="text-sm text-muted-foreground">
+                Quote Number: {editForm.quoteNumber}
+              </p>
+            )}
           </DialogHeader>
           {editForm && (
-            <form className="space-y-4">
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Supplier Name</label>
+                <Label htmlFor="edit-supplierName">Supplier Name</Label>
                 <Input
+                  id="edit-supplierName"
                   value={editForm.supplierName}
                   onChange={e => handleEditChange("supplierName", e.target.value)}
+                  placeholder="Enter supplier name"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Priority</label>
-                  <select
-                    className="w-full border rounded p-2"
+                  <Label htmlFor="edit-priority">Priority</Label>
+                  <Select
                     value={editForm.priority}
-                    onChange={e => handleEditChange("priority", e.target.value as SupplierQuote["priority"])}
+                    onValueChange={(value: "Low" | "Medium" | "High" | "Urgent") => 
+                      handleEditChange("priority", value)}
                   >
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                    <option value="Urgent">Urgent</option>
-                  </select>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Low">Low</SelectItem>
+                      <SelectItem value="Medium">Medium</SelectItem>
+                      <SelectItem value="High">High</SelectItem>
+                      <SelectItem value="Urgent">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Status</label>
-                  <select
-                    className="w-full border rounded p-2"
+                  <Label htmlFor="edit-status">Status</Label>
+                  <Select
                     value={editForm.status}
-                    onChange={e => handleEditChange("status", e.target.value as SupplierQuote["status"])}
+                    onValueChange={(value: "Draft" | "Sent" | "Received" | "Under Review" | "Approved" | "Rejected" | "Accepted" | "Expired") => 
+                      handleEditChange("status", value)}
                   >
-                    <option value="Draft">Draft</option>
-                    <option value="Sent">Sent</option>
-                    <option value="Received">Received</option>
-                    <option value="Under Review">Under Review</option>
-                    <option value="Approved">Approved</option>
-                    <option value="Rejected">Rejected</option>
-                    <option value="Expired">Expired</option>
-                  </select>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Draft">Draft</SelectItem>
+                      <SelectItem value="Sent">Sent</SelectItem>
+                      <SelectItem value="Received">Received</SelectItem>
+                      <SelectItem value="Under Review">Under Review</SelectItem>
+                      <SelectItem value="Approved">Approved</SelectItem>
+                      <SelectItem value="Rejected">Rejected</SelectItem>
+                      <SelectItem value="Accepted">Accepted</SelectItem>
+                      <SelectItem value="Expired">Expired</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Total Amount</label>
+                  <Label htmlFor="edit-totalAmount">Total Amount</Label>
                   <Input
+                    id="edit-totalAmount"
                     type="number"
+                    step="0.01"
                     value={editForm.totalAmount}
                     onChange={e => handleEditChange("totalAmount", e.target.value)}
+                    placeholder="0.00"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Currency</label>
-                  <Input
+                  <Label htmlFor="edit-currency">Currency</Label>
+                  <Select
                     value={editForm.currency}
-                    onChange={e => handleEditChange("currency", e.target.value)}
+                    onValueChange={(value: "BHD" | "AED" | "USD" | "EUR" | "GBP") => 
+                      handleEditChange("currency", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select currency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BHD">BHD</SelectItem>
+                      <SelectItem value="AED">AED</SelectItem>
+                      <SelectItem value="USD">USD</SelectItem>
+                      <SelectItem value="EUR">EUR</SelectItem>
+                      <SelectItem value="GBP">GBP</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-paymentTerms">Payment Terms</Label>
+                  <Input
+                    id="edit-paymentTerms"
+                    value={editForm.paymentTerms || ""}
+                    onChange={e => handleEditChange("paymentTerms", e.target.value)}
+                    placeholder="e.g., Net 30"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-deliveryTerms">Delivery Terms</Label>
+                  <Input
+                    id="edit-deliveryTerms"
+                    value={editForm.deliveryTerms || ""}
+                    onChange={e => handleEditChange("deliveryTerms", e.target.value)}
+                    placeholder="e.g., FOB Destination"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Payment Terms</label>
-                <Input
-                  value={editForm.paymentTerms}
-                  onChange={e => handleEditChange("paymentTerms", e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Delivery Terms</label>
-                <Input
-                  value={editForm.deliveryTerms}
-                  onChange={e => handleEditChange("deliveryTerms", e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Notes</label>
+                <Label htmlFor="edit-notes">Notes</Label>
                 <Textarea
+                  id="edit-notes"
                   value={editForm.notes || ""}
                   onChange={e => handleEditChange("notes", e.target.value)}
+                  placeholder="Additional requirements or specifications"
+                  rows={3}
                 />
               </div>
-            </form>
+              <div className="flex justify-end gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowEditDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleEditSave}
+                  disabled={!editForm?.supplierName?.trim() || !editForm?.totalAmount?.toString().trim() || !editForm?.currency?.trim()}
+                >
+                  Save Changes
+                </Button>
+              </div>
+            </div>
           )}
-          <DialogFooter className="mt-4 flex justify-end space-x-2">
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button variant="default" onClick={handleEditSave}>Save</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

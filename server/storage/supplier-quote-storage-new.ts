@@ -402,8 +402,8 @@ export class SupplierQuoteStorage {
       let paramIndex = 1;
 
       // Add required fields
-      insertFields.push('id', 'quote_number', 'supplier_id', 'status', 'priority', 'created_at', 'updated_at');
-      placeholders.push(`gen_random_uuid()`, `$${paramIndex}`, `$${paramIndex + 1}`, `$${paramIndex + 2}`, `$${paramIndex + 3}`, `NOW()`, `NOW()`);
+      insertFields.push('id', 'quote_number', 'supplier_id', 'status', 'priority', 'request_date', 'created_at', 'updated_at');
+      placeholders.push(`gen_random_uuid()`, `$${paramIndex}`, `$${paramIndex + 1}`, `$${paramIndex + 2}`, `$${paramIndex + 3}`, `NOW()`, `NOW()`, `NOW()`);
       values.push(data.quoteNumber, data.supplierId, data.status || 'Draft', data.priority || 'Medium');
       paramIndex += 4;
 

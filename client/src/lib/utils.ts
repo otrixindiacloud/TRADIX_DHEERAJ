@@ -6,21 +6,26 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatCurrency(amount: number, currency = "BHD"): string {
-  // Handle BHD specifically as it uses 3 decimal places
+  // Round to 2 decimal places for cleaner display
+  const roundedAmount = Math.round(amount * 100) / 100;
+  
+  // Handle BHD specifically - use 2 decimal places for better readability
   if (currency === "BHD") {
     return new Intl.NumberFormat("en-BH", {
       style: "currency",
       currency: "BHD",
-      minimumFractionDigits: 3,
-      maximumFractionDigits: 3,
-    }).format(amount);
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(roundedAmount);
   }
   
   // For other currencies, use standard formatting
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
-  }).format(amount);
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(roundedAmount);
 }
 
 // Adaptive / compact currency formatting for tight UI areas (e.g., KPI cards)

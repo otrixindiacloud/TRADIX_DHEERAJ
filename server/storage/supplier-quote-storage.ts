@@ -2,7 +2,7 @@
 import { db, pool } from "../db";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { supplierQuotes, supplierQuoteItems, customers, salesOrders, customerAcceptances, purchaseOrders, suppliers } from "@shared/schema";
+import { supplierQuotes, supplierQuoteItems, customers, salesOrders, customerAcceptances, purchaseOrders, suppliers, requisitions } from "@shared/schema";
 
 export class SupplierQuoteStorage {
   static async list(params: any) {
@@ -69,6 +69,7 @@ export class SupplierQuoteStorage {
           sq.terms,
           sq.notes,
           sq.requisition_id as "requisitionId",
+          r.requisition_number as "requisitionNumber",
           sq.payment_terms as "paymentTerms",
           sq.delivery_terms as "deliveryTerms",
           sq.rfq_number as "rfqNumber",
@@ -88,6 +89,7 @@ export class SupplierQuoteStorage {
           COALESCE(item_counts.item_count, 0) as "itemCount"
         FROM supplier_quotes sq
         LEFT JOIN suppliers s ON sq.supplier_id = s.id
+        LEFT JOIN requisitions r ON sq.requisition_id = r.id
         LEFT JOIN (
           SELECT 
             supplier_quote_id,
@@ -135,6 +137,7 @@ export class SupplierQuoteStorage {
           terms: row.terms,
           notes: row.notes,
           requisitionId: row.requisitionId,
+          requisitionNumber: row.requisitionNumber,
           paymentTerms: row.paymentTerms,
           deliveryTerms: row.deliveryTerms,
           rfqNumber: row.rfqNumber,
@@ -169,6 +172,7 @@ export class SupplierQuoteStorage {
         supersededBy: supplierQuotes.supersededBy,
         isSuperseded: supplierQuotes.isSuperseded,
         enquiryId: supplierQuotes.enquiryId,
+        requisitionId: supplierQuotes.requisitionId,
         supplierId: supplierQuotes.supplierId,
         status: supplierQuotes.status,
         priority: supplierQuotes.priority,
@@ -198,16 +202,36 @@ export class SupplierQuoteStorage {
         updatedAt: supplierQuotes.updatedAt,
         // Add supplier name from suppliers table
         supplierName: suppliers.name,
+        // Add requisition number from requisitions table
+        requisitionNumber: requisitions.requisitionNumber,
       })
       .from(supplierQuotes)
       .leftJoin(suppliers, eq(supplierQuotes.supplierId, suppliers.id))
+      .leftJoin(requisitions, eq(supplierQuotes.requisitionId, requisitions.id))
       .where(eq(supplierQuotes.id, id))
       .limit(1);
     return result[0];
   }
 
   static async getItems(quoteId: string) {
-  return await db.select().from(supplierQuoteItems).where(eq(supplierQuoteItems.supplierQuoteId, quoteId));
+    return await db.select().from(supplierQuoteItems).where(eq(supplierQuoteItems.supplierQuoteId, quoteId));
+  }
+
+  static async createItem(data: any) {
+    const [item] = await db.insert(supplierQuoteItems).values(data).returning();
+    return item;
+  }
+
+  static async updateItem(id: string, updates: any) {
+    const [item] = await db.update(supplierQuoteItems)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(supplierQuoteItems.id, id))
+      .returning();
+    return item;
+  }
+
+  static async deleteItem(id: string) {
+    await db.delete(supplierQuoteItems).where(eq(supplierQuoteItems.id, id));
   }
 
   static async create(data: any) {

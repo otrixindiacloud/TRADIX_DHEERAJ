@@ -201,6 +201,19 @@ export default function MaterialRequestsPage() {
     enabled: Array.isArray(requests) && requests.length > 0,
   });
 
+  // Fetch suppliers for dropdown
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ['/api/suppliers'],
+    queryFn: async () => {
+      const res = await fetch('/api/suppliers');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to load suppliers');
+      }
+      return res.json();
+    }
+  });
+
   // Create material request mutation
   const createRequestMutation = useMutation({
     mutationFn: async (data: MaterialRequestForm) => {
@@ -841,7 +854,21 @@ export default function MaterialRequestsPage() {
                 <FormField control={editItemForm.control} name="preferredSupplier" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Preferred Supplier (Optional)</FormLabel>
-                    <FormControl><Input placeholder="Enter supplier name" {...field} /></FormControl>
+                    <FormControl>
+                      <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a supplier" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {suppliers.map((supplier: any) => (
+                            <SelectItem key={supplier.id} value={supplier.name}>
+                              {supplier.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -917,7 +944,21 @@ export default function MaterialRequestsPage() {
                 <FormField control={editItemForm.control} name="preferredSupplier" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Preferred Supplier (Optional)</FormLabel>
-                    <FormControl><Input placeholder="Enter supplier name" {...field} /></FormControl>
+                    <FormControl>
+                      <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a supplier" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {suppliers.map((supplier: any) => (
+                            <SelectItem key={supplier.id} value={supplier.name}>
+                              {supplier.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
